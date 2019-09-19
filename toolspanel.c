@@ -83,6 +83,16 @@ void ToolsPanel_DestroyBackBuffer(PTOOLSWINDATA pSelf)
 	DeleteDC(pSelf->backDC);
 }
 
+BOOL ToolsPanel_UpdateBackBuffer(PTOOLSWINDATA pSelf)
+{
+	if ((pSelf->backBufBitmap = CreateCompatibleBitmap(pSelf->backDC, pSelf->rcClientSize.right, pSelf->rcClientSize.bottom)) != NULL) {
+		HBITMAP prevBitmap = SelectObject(pSelf->backDC, pSelf->backBufBitmap);
+		DeleteObject(prevBitmap); // previous bitmap was created by application, so it must be destroyed
+		return TRUE;
+	}
+	return FALSE;
+}
+
 BOOL ToolsPanel_CreateBackBuffer(PTOOLSWINDATA pSelf)
 {
 	HDC temp = GetDC(pSelf->winHandle);
@@ -140,8 +150,7 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			GetClientRect(pToolsSelf->winHandle, &(pToolsSelf->rcClientSize));
 			RECT *resArray[3] = { &pToolsSelf->rcPlayButtonPos, &pToolsSelf->rcPauseButtonPos, &pToolsSelf->rcStopButtonPos };
 			calculateButtonsPositions(pToolsSelf->totalButtonsCount, resArray, pToolsSelf->rcClientSize);
-			ToolsPanel_DestroyBackBuffer(pToolsSelf);
-			ToolsPanel_CreateBackBuffer(pToolsSelf); // ADD CHECKING!!
+			ToolsPanel_UpdateBackBuffer(pToolsSelf); // add checking?
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
 		case WM_ERASEBKGND:
 			return TRUE;
