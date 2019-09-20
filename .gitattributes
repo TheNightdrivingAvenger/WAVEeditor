@@ -1,6 +1,5 @@
 # Auto detect text files and perform LF normalization
-* text=auto
-*.h text working-tree-encoding=UTF-16 eol=CRLF
-*.c text working-tree-encoding=UTF-16 eol=CRLF
-*.aps text working-tree-encoding=UTF-16 eol=CRLF
-*.rc text working-tree-encoding=UTF-16 eol=CRLF
+*.h diff=utf16
+*.c diff=utf16
+*.aps diff=utf16
+*.rc diff=utf16
