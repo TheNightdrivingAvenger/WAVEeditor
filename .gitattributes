@@ -1,5 +1,4 @@
-# Auto detect text files and perform LF normalization
-*.h diff=utf16
-*.c diff=utf16
-*.aps diff=utf16
-*.rc diff=utf16
+*.h diff=UTF16
+*.c diff=UTF16
+*.aps diff=UTF16
+*.rc diff=UTF16
