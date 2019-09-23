@@ -9,6 +9,7 @@
 #include "headers\buttons.h"
 #include "headers\player.h"
 #include "headers\constants.h"
+#include "headers\list.h"
 
 inline POINT mouseCoordsToPoint(LPARAM lParam)
 {
@@ -109,6 +110,7 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			resArray[i] = &pToolsSelf->buttons[i].buttonPos;
 		}
 		calculateButtonsPositions(pToolsSelf->totalButtonsCount, resArray, pToolsSelf->rcClientSize);
+
 		// *** BUTTONS INTERFACE OBJECTS INITIALIZATION *** /// 0 -- play button, 1 -- pause button, 2 -- stop button
 		pToolsSelf->buttons[0].pen = CreatePen(PS_SOLID, 3, RGB(210,210,210));
 		pToolsSelf->buttons[0].brush = CreateSolidBrush(RGB(65,208,34));
@@ -147,7 +149,7 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			}
 			switch (i) {
 				case 0: //play
-					play(hWnd, pToolsSelf->modelData);
+					Player_Play(hWnd, pToolsSelf->modelData);
 					break;
 				case 1: //pause
 					break;
