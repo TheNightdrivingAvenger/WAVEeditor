@@ -7,7 +7,8 @@
 #include "headers\toolspanel.h"
 #include "headers\buttoninfo.h"
 #include "headers\buttons.h"
-
+#include "headers\player.h"
+#include "headers\constants.h"
 
 inline POINT mouseCoordsToPoint(LPARAM lParam)
 {
@@ -137,11 +138,21 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	switch (uMsg) {
 		case WM_LBUTTONDOWN:
 			clickCoords = mouseCoordsToPoint(lParam);
-			for (int i = 0; i < pToolsSelf->totalButtonsCount; i++) {
+			int i = 0;
+			for (; i < pToolsSelf->totalButtonsCount; i++) {
 				if (PtInRect(&(pToolsSelf->buttons[i].buttonPos), clickCoords)) {
 					pToolsSelf->buttons[i].Button_OnClick();
 					break;
 				}
+			}
+			switch (i) {
+				case 0: //play
+					play(hWnd, pToolsSelf->modelData);
+					break;
+				case 1: //pause
+					break;
+				case 2: //stop
+					break;
 			}
 			return 0;
 		case WM_PAINT:

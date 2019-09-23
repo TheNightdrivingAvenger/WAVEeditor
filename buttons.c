@@ -71,6 +71,8 @@ void StopButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 	SelectObject(targetDC, tempPen);
 }
 
+
+// TODO: OnClick should just change the button's state (for example change the style)
 void PlayButton_OnClick(void)
 {
 }

@@ -1,7 +1,10 @@
 #pragma once
 
+#define
+
 void ToolsPanel_RegisterClass(HINSTANCE hInstance, const wchar_t *className);
 
+#include "headers\modeldata.h"
 #include "headers\buttoninfo.h"
 
 typedef struct tagTOOLSWINDATA {
@@ -9,6 +12,7 @@ typedef struct tagTOOLSWINDATA {
 	HDC hdc;
 	HDC backDC;
 	RECT rcClientSize;
+	PMODELDATA modelData;
 	HBRUSH bckgndBrush;
 	HBRUSH buttonBckgndBrush;
 	HBITMAP backBufBitmap;

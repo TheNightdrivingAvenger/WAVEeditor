@@ -174,7 +174,7 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		pMainSelf->winHandle = hWnd;
 		GetClientRect(pMainSelf->winHandle, &newSize);
 
-		// TODO: constans are bad, need to define or something for easier changes. Using proprotions!
+		
 		drawingAreaHandle = CreateWindowEx(0, L"DrawingArea", NULL, WS_CHILD | WS_VISIBLE,
 			0, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), hWnd, 0, 0, NULL);
 		toolsPanelHandle = CreateWindowEx(0, L"ToolsPanel", NULL, WS_CHILD | WS_VISIBLE,

@@ -13,10 +13,10 @@
 #include <string.h>
 #include <math.h>
 #include "headers\drawingarea.h"
+#include "headers\constants.h"
 #include "headers\sounddrawer.h"
 #include "headers\fileworker.h"
 #include "headers\soundworker.h"
-#include "headers\player.h"
 
 BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf)
 {
@@ -229,12 +229,13 @@ unsigned long DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoor
 	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
 		if (pSelf->modelData->samplesInBlock == 1) {
 			return min(pSelf->modelData->rgCurRange.nLastSample, pSelf->modelData->rgCurRange.nFirstSample
-				+ roundf(LOWORD(clickCoords) / (float)pSelf->stepX));
+				+ (int)roundf(LOWORD(clickCoords) / (float)pSelf->stepX));
 		} else {
 			return min(pSelf->modelData->rgCurRange.nLastSample, pSelf->modelData->rgCurRange.nFirstSample 
 				+ pSelf->modelData->samplesInBlock * LOWORD(clickCoords));
 		}
 	}
+	return 0;
 }
 
 void DrawingArea_DrawWave(PDRAWINGWINDATA pSelf)
@@ -295,6 +296,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pDrawSelf);
 		pDrawSelf->winHandle = hWnd;
 		pDrawSelf->modelData->curFile = INVALID_HANDLE_VALUE;
+		pDrawSelf->modelData->psPlayerState = stopped;
 
 		pDrawSelf->curPen = CreatePen(PS_SOLID, 1, RGB(255,128,0));
 		pDrawSelf->borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
@@ -316,34 +318,34 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 	switch (uMsg)
 	{
 		// setup: filling WAVEFORMATEX, buffers and other values
-		case DM_SETINPUTFILE:
+		case SM_SETINPUTFILE:
 			res = DrawingArea_FileChange(pDrawSelf, (HANDLE)wParam);
 			pDrawSelf->modelData->isChanged = FALSE;
 			return res;
-		case DM_SAVEFILEAS:
+		case SM_SAVEFILEAS:
 			res = DrawingArea_SaveFile(pDrawSelf, (HANDLE)wParam, FALSE);
 			pDrawSelf->modelData->isChanged = FALSE;
 			return res;
-		case ADM_MAKESILENT:
+		case MAF_MAKESILENT:
 			DrawingArea_MakeSilent(pDrawSelf);
 			pDrawSelf->modelData->isChanged = TRUE;
 			return 0;
 
-		case ADM_DELETE:
+		case MAF_DELETE:
 			DrawingArea_DeletePiece(pDrawSelf);
 			pDrawSelf->modelData->isChanged = TRUE;
 			return 0;
-		case ADM_COPY:
+		case MAF_COPY:
 			pDrawSelf->modelData->rgCopyRange = pDrawSelf->modelData->rgSelectedRange;
 			return 0;
 
 		// return error if not enough memory or something
-		case ADM_PASTE:
+		case MAF_PASTE:
 			DrawingArea_PastePiece(pDrawSelf);
 			pDrawSelf->modelData->isChanged = TRUE;
 			return 0;
 
-		case ADM_SELECTALL:
+		case MAF_SELECTALL:
 			if (pDrawSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
 				pDrawSelf->modelData->rgSelectedRange.nFirstSample = 1;
 				pDrawSelf->modelData->rgSelectedRange.nLastSample = pDrawSelf->modelData->dataSize / pDrawSelf->modelData->wfxFormat.nBlockAlign;
@@ -353,7 +355,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			}
 			return 0;
 
-		case ADM_SAVESELECTED:
+		case MAF_SAVESELECTED:
 			if (pDrawSelf->modelData->rgSelectedRange.nFirstSample != pDrawSelf->modelData->rgSelectedRange.nLastSample) {
 				res = DrawingArea_SaveFile(pDrawSelf, (HANDLE)wParam, TRUE);
 				return res;				
@@ -361,12 +363,12 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 				return -2;
 			}
 
-		case ADM_REVERSESELECTED:
+		case MAF_REVERSESELECTED:
 			DrawingArea_ReverseSelected(pDrawSelf);
 			pDrawSelf->modelData->isChanged = TRUE;
 			return 0;
 
-		case ADM_ISCHANGED:
+		case MAF_ISCHANGED:
 			return pDrawSelf->modelData->isChanged;
 
 		case WM_LBUTTONDOWN:

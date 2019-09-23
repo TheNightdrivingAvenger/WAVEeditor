@@ -5,6 +5,8 @@ typedef struct {
 	unsigned long nLastSample;
 } RANGE, *PRANGE;
 
+typedef enum { playing, paused, stopped } playerState;
+
 typedef struct tagMODELDATA {
 	void *soundData;
 	DWORD dataSize;
@@ -17,4 +19,5 @@ typedef struct tagMODELDATA {
 	RANGE rgSelectedRange;
 	RANGE rgCopyRange;
 	BOOL isChanged;
+	playerState psPlayerState;
 } MODELDATA, *PMODELDATA;
