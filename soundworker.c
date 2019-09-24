@@ -59,8 +59,6 @@ void deletePiece(PMODELDATA pModelData)
 	pModelData->soundData = HeapReAlloc(GetProcessHeap(), 0, pModelData->soundData, pModelData->dataSize - cutBlockSize);
 
 	pModelData->dataSize -= cutBlockSize;
-
-	pModelData->rgSelectedRange.nLastSample = pModelData->rgSelectedRange.nFirstSample = 1;
 }
 
 void reversePiece(PMODELDATA pModelData)

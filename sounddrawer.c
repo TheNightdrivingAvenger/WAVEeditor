@@ -18,16 +18,13 @@ unsigned long calcMinMax16(WORD chanNum, int resArr[chanNum][2], void *source, u
 
 typedef unsigned long (*minMaxCalculator)(WORD, int [*][2], void *, unsigned long, int);
 
-// USES: model->bitspersample; model->rgCurRange; drawingArea->size; model->samplesInBlock; model->wfxFormat
-// model->minMaxCache; model->dataSize; model->cacheLength; model->soundData
-
-BOOL recalcMinMax(PDRAWINGWINDATA pSelf)
+BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PWAVEFORMATEX wfxFormat)
 {
 	float minSampleVal = 0;
 	
 	minMaxCalculator calcMinMax;
 
-	switch (pSelf->modelData->wfxFormat.wBitsPerSample)
+	switch (wfxFormat->wBitsPerSample)
 	{
 		case 8:
 			calcMinMax = calcMinMax8;
@@ -41,107 +38,104 @@ BOOL recalcMinMax(PDRAWINGWINDATA pSelf)
 			return FALSE; //invalid data
 	}
 
-	unsigned long totalSamples = pSelf->modelData->rgCurRange.nLastSample - pSelf->modelData->rgCurRange.nFirstSample;
+	unsigned long totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample;
 	if (totalSamples == 0) return FALSE;
 
-	float samplesToWidth = totalSamples / (float)pSelf->rcClientSize.right; 
+	float samplesToWidth = totalSamples / (float)windowProps->rcClientSize.right; 
 
 	if (samplesToWidth >= 1) {
 		float intPart;
 		if (modff(samplesToWidth, &intPart) > 0) {
-			pSelf->modelData->samplesInBlock = (int)truncf(intPart + 1);
+			windowProps->samplesInBlock = (int)truncf(intPart + 1);
 		} else {
-			pSelf->modelData->samplesInBlock = (int)roundf(intPart);
+			windowProps->samplesInBlock = (int)roundf(intPart);
 		}
 	} else {
-		pSelf->modelData->samplesInBlock = 1;
+		windowProps->samplesInBlock = 1;
 	}
 	int delta; //how many samples were processed in min-max
-	int resArr[pSelf->modelData->wfxFormat.nChannels][2];
+	int resArr[wfxFormat->nChannels][2];
 
-	if (pSelf->modelData->minMaxChunksCache != NULL) {
-		HeapFree(GetProcessHeap(), 0, pSelf->modelData->minMaxChunksCache);
+	if (windowProps->minMaxChunksCache != NULL) {
+		HeapFree(GetProcessHeap(), 0, windowProps->minMaxChunksCache);
 	}
-	totalSamples = pSelf->modelData->wfxFormat.nChannels * (pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign); // samples in all channels
+	totalSamples = wfxFormat->nChannels * (dataSize / wfxFormat->nBlockAlign); // samples in all channels
 
 																	  // 2 -- min and max
-	if ((pSelf->modelData->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalSamples / pSelf->modelData->samplesInBlock) + 1))) == NULL) {
+	if ((windowProps->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalSamples / windowProps->samplesInBlock) + 1))) == NULL) {
 		return FALSE;
 	}
 
-	int *cache = (int *)pSelf->modelData->minMaxChunksCache;
+	int *cache = (int *)windowProps->minMaxChunksCache;
 
-	pSelf->modelData->cacheLength = 0;
-	for (unsigned long i = 0; (i + pSelf->modelData->samplesInBlock * pSelf->modelData->wfxFormat.nChannels) <= totalSamples; i += delta) {
-		delta = calcMinMax(pSelf->modelData->wfxFormat.nChannels, resArr, pSelf->modelData->soundData, i, pSelf->modelData->samplesInBlock);
+	windowProps->cacheLength = 0;
+	for (unsigned long i = 0; (i + windowProps->samplesInBlock * wfxFormat->nChannels) <= totalSamples; i += delta) {
+		delta = calcMinMax(wfxFormat->nChannels, resArr, soundData, i, windowProps->samplesInBlock);
 
-		for (int j = 0; j < pSelf->modelData->wfxFormat.nChannels; j++) {
+		for (int j = 0; j < wfxFormat->nChannels; j++) {
 			cache[j * 2] = resArr[j][0];
 			cache[j * 2 + 1] = resArr[j][1];
 		}
-		cache += pSelf->modelData->wfxFormat.nChannels * 2; // * 2 -- min and max
-		(pSelf->modelData->cacheLength)++;
+		cache += wfxFormat->nChannels * 2; // * 2 -- min and max
+		(windowProps->cacheLength)++;
 	}
 	return TRUE;
 }
 
-
-// USES: model->rgCurRange; pSelf->stepX; model->samplesInBlock; pSelf->rcClientSize; model->wfxFormat.nChannels
-// model->minMaxCache; pSelf->backDC; pSelf->rcSelectedRange; pSelf-backBrush; pSelf->curPen; pSelf->rcClientSize
-void drawRegion(PDRAWINGWINDATA pSelf)
+void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 {
-	unsigned long totalSamples = pSelf->modelData->rgCurRange.nLastSample - pSelf->modelData->rgCurRange.nFirstSample;
+	unsigned long totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample;
 
 	if (totalSamples == 0) return;
 
-	pSelf->stepX = 1;
-	if (pSelf->modelData->samplesInBlock == 1) {
-		pSelf->stepX = pSelf->rcClientSize.right / totalSamples;
+	windowProps->stepX = 1;
+	if (windowProps->samplesInBlock == 1) {
+		windowProps->stepX = windowProps->rcClientSize.right / totalSamples;
 	}
 
-	int zeroChannelLvl = (pSelf->rcClientSize.bottom - 1) / pSelf->modelData->wfxFormat.nChannels;
+	int zeroChannelLvl = (windowProps->rcClientSize.bottom - 1) / wfxFormat->nChannels;
 
-	unsigned long cachePos = pSelf->modelData->rgCurRange.nFirstSample / pSelf->modelData->samplesInBlock;
-	unsigned long bufferStart = cachePos * pSelf->modelData->wfxFormat.nChannels * 2; //buffer offset
+	// TODO: what's with division here? Is it OK?
+	unsigned long cachePos = windowProps->rgCurDisplayedRange.nFirstSample / windowProps->samplesInBlock;
+	unsigned long bufferStart = cachePos * wfxFormat->nChannels * 2; //buffer offset
 
-	int *cache = (int *)pSelf->modelData->minMaxChunksCache + bufferStart;
+	int *cache = (int *)windowProps->minMaxChunksCache + bufferStart;
 
-	int soundDepth = 2 << (pSelf->modelData->wfxFormat.wBitsPerSample - 1);
+	int soundDepth = 2 << (wfxFormat->wBitsPerSample - 1);
 	int normalizedMin, normalizedMax;
-	int tempMins[pSelf->modelData->wfxFormat.nChannels];
+	int tempMins[wfxFormat->nChannels];
 
-	for (int i = 0; i < pSelf->modelData->wfxFormat.nChannels; i++) {
+	for (int i = 0; i < wfxFormat->nChannels; i++) {
 		tempMins[i] = cache[i * 2] * zeroChannelLvl / soundDepth + zeroChannelLvl * (i + 1);// *2 because in memory it's [min][max][min][max]...
 	}
 
 	// 2 is a bad idea for marker, should be some constant
-	BOOL isMarker = ((pSelf->rcSelectedRange.right - pSelf->rcSelectedRange.left) <= 2); // did user just set the marker or selected a range?
+	BOOL isMarker = ((windowProps->rcSelectedRange.right - windowProps->rcSelectedRange.left) <= 2); // did user just set the marker or selected a range?
 	if (!isMarker)
 	{
-		FillRect(pSelf->backDC, &pSelf->rcSelectedRange, pSelf->highlightBrush);
+		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);
 	}
 
-	SelectObject(pSelf->backDC, pSelf->curPen);
-	int curSample = pSelf->modelData->rgCurRange.nFirstSample;
-	for (int xPos = 0; xPos < pSelf->rcClientSize.right 
-			&& cachePos < pSelf->modelData->cacheLength; xPos += pSelf->stepX) {
+	SelectObject(windowProps->backDC, windowProps->curPen);
+	int curSample = windowProps->rgCurDisplayedRange.nFirstSample;
+	for (int xPos = 0; xPos < windowProps->rcClientSize.right 
+			&& cachePos < windowProps->cacheLength; xPos += windowProps->stepX) {
 		// drawing all channels in cycle
-		for (int j = 0; j < pSelf->modelData->wfxFormat.nChannels; j++) {
+		for (int j = 0; j < wfxFormat->nChannels; j++) {
 			normalizedMin = cache[j * 2] * zeroChannelLvl / soundDepth + zeroChannelLvl * (j + 1);
 			normalizedMax = cache[j * 2 + 1] * zeroChannelLvl / soundDepth + zeroChannelLvl * (j + 1);
-			MoveToEx(pSelf->backDC, xPos, normalizedMin - 1, NULL);
-			LineTo(pSelf->backDC, xPos, normalizedMax);
-			LineTo(pSelf->backDC, xPos - pSelf->stepX, tempMins[j]);
+			MoveToEx(windowProps->backDC, xPos, normalizedMin - 1, NULL);
+			LineTo(windowProps->backDC, xPos, normalizedMax);
+			LineTo(windowProps->backDC, xPos - windowProps->stepX, tempMins[j]);
 			tempMins[j] = normalizedMin;
 		}
-		cache += pSelf->modelData->wfxFormat.nChannels * 2;
-		curSample += pSelf->modelData->samplesInBlock;
+		cache += wfxFormat->nChannels * 2;
+		curSample += windowProps->samplesInBlock;
 		cachePos++;
 	}
-	pSelf->modelData->rgCurRange.nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign;
 	if (isMarker) {
-		SelectObject(pSelf->backDC, pSelf->borderPen);
-		FillRect(pSelf->backDC, &pSelf->rcSelectedRange, pSelf->highlightBrush);
+		SelectObject(windowProps->backDC, windowProps->borderPen);
+		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);
 	}
 }
 

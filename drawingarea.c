@@ -18,11 +18,12 @@
 #include "headers\fileworker.h"
 #include "headers\soundworker.h"
 
-BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf)
+BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 {
-	pSelf->modelData->rgCurRange.nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign;
-	BOOL res = recalcMinMax(pSelf);
-	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+	// TODO: updating the cache means there has been some changes in the sound data. But what I do here is just set view from the
+	// first to the last sample. Not good for planned scaling
+	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / updateInfo->wfxFormat->nBlockAlign;
+	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
 	return res;
 }
 
@@ -104,9 +105,9 @@ LRESULT DrawingArea_FileChange(PDRAWINGWINDATA pSelf, HANDLE hNewFile)
 		if ((pSelf->modelData->soundData = HeapAlloc(GetProcessHeap(), 0, curChunk.chunkSize)) != NULL) {		
 			pSelf->modelData->dataSize = curChunk.chunkSize;
 			if (ReadFile(hNewFile, pSelf->modelData->soundData, curChunk.chunkSize, &readres, NULL)) {
-				pSelf->modelData->rgCurRange.nFirstSample = 0;
-				pSelf->modelData->rgCurRange.nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign; //same range for every channel
-				//pSelf->modelData->rgCurRange.nLastSample = 3600;
+				pSelf->modelData->rgCurDisplayedRange.nFirstSample = 0;
+				pSelf->modelData->rgCurDisplayedRange.nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign; //same range for every channel
+				//pSelf->modelData->rgCurDisplayedRange.nLastSample = 3600;
 
 				pSelf->rcSelectedRange.left = 0;
 				pSelf->rcSelectedRange.right = 0;
@@ -185,53 +186,14 @@ LRESULT DrawingArea_SaveFile(PDRAWINGWINDATA pSelf, HANDLE hFile, BOOL saveSelec
 	}
 }
 
-void DrawingArea_MakeSilent(PDRAWINGWINDATA pSelf)
-{
-	if (pSelf->modelData->rgSelectedRange.nFirstSample != pSelf->modelData->rgSelectedRange.nLastSample)
-	{
-		makeSilent(pSelf->modelData);
-		pSelf->modelData->rgCopyRange.nFirstSample = pSelf->modelData->rgCopyRange.nLastSample = 0;
-		DrawingArea_UpdateCache(pSelf);
-	}
-}
-
-void DrawingArea_PastePiece(PDRAWINGWINDATA pSelf)
-{
-	if (pSelf->modelData->rgCopyRange.nFirstSample != pSelf->modelData->rgCopyRange.nLastSample) {
-		pastePiece(pSelf->modelData);
-		pSelf->modelData->rgSelectedRange.nLastSample = pSelf->modelData->rgSelectedRange.nFirstSample;
-		pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + 2;
-		DrawingArea_UpdateCache(pSelf);
-	}
-}
-
-void DrawingArea_DeletePiece(PDRAWINGWINDATA pSelf)
-{
-	if (pSelf->modelData->rgSelectedRange.nFirstSample != pSelf->modelData->rgSelectedRange.nLastSample) {
-		deletePiece(pSelf->modelData);
-		pSelf->modelData->rgCopyRange.nFirstSample = pSelf->modelData->rgCopyRange.nLastSample = 0;
-		pSelf->rcSelectedRange.left = 0;
-		pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + 2;
-		DrawingArea_UpdateCache(pSelf);
-	}
-}
-
-void DrawingArea_ReverseSelected(PDRAWINGWINDATA pSelf)
-{
-	if (pSelf->modelData->rgSelectedRange.nFirstSample != pSelf->modelData->rgSelectedRange.nLastSample) {
-		reversePiece(pSelf->modelData);
-		DrawingArea_UpdateCache(pSelf);
-	}
-}
-
 unsigned long DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoords)
 {
 	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
 		if (pSelf->modelData->samplesInBlock == 1) {
-			return min(pSelf->modelData->rgCurRange.nLastSample, pSelf->modelData->rgCurRange.nFirstSample
+			return min(pSelf->modelData->rgCurDisplayedRange.nLastSample, pSelf->modelData->rgCurDisplayedRange.nFirstSample
 				+ (int)roundf(LOWORD(clickCoords) / (float)pSelf->stepX));
 		} else {
-			return min(pSelf->modelData->rgCurRange.nLastSample, pSelf->modelData->rgCurRange.nFirstSample 
+			return min(pSelf->modelData->rgCurDisplayedRange.nLastSample, pSelf->modelData->rgCurDisplayedRange.nFirstSample 
 				+ pSelf->modelData->samplesInBlock * LOWORD(clickCoords));
 		}
 	}
@@ -245,7 +207,7 @@ void DrawingArea_DrawWave(PDRAWINGWINDATA pSelf)
 	SelectObject(pSelf->backDC, pSelf->borderPen);
 	FillRect(pSelf->backDC, &pSelf->rcClientSize, pSelf->bckgndBrush);
 
-	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE && pSelf->modelData->minMaxChunksCache != NULL) {
+	if (pSelf->minMaxChunksCache != NULL) {
 		drawRegion(pSelf);
 	}
 	RestoreDC(pSelf->backDC, -1);
@@ -290,13 +252,13 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 	PDRAWINGWINDATA pDrawSelf;
 	PAINTSTRUCT ps;
 
+	PRANGE rgNewSelectedRange;
+
 	if (uMsg == WM_CREATE) {
 		pDrawSelf = (PDRAWINGWINDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DRAWINGWINDATA));
-		pDrawSelf->modelData = (PMODELDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MODELDATA));
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pDrawSelf);
 		pDrawSelf->winHandle = hWnd;
-		pDrawSelf->modelData->curFile = INVALID_HANDLE_VALUE;
-		pDrawSelf->modelData->psPlayerState = stopped;
+		pDrawSelf->parentWindow = ((PCREATESTRUCT)lParam)->hWndParent;
 
 		pDrawSelf->curPen = CreatePen(PS_SOLID, 1, RGB(255,128,0));
 		pDrawSelf->borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
@@ -326,34 +288,6 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			res = DrawingArea_SaveFile(pDrawSelf, (HANDLE)wParam, FALSE);
 			pDrawSelf->modelData->isChanged = FALSE;
 			return res;
-		case MAF_MAKESILENT:
-			DrawingArea_MakeSilent(pDrawSelf);
-			pDrawSelf->modelData->isChanged = TRUE;
-			return 0;
-
-		case MAF_DELETE:
-			DrawingArea_DeletePiece(pDrawSelf);
-			pDrawSelf->modelData->isChanged = TRUE;
-			return 0;
-		case MAF_COPY:
-			pDrawSelf->modelData->rgCopyRange = pDrawSelf->modelData->rgSelectedRange;
-			return 0;
-
-		// return error if not enough memory or something
-		case MAF_PASTE:
-			DrawingArea_PastePiece(pDrawSelf);
-			pDrawSelf->modelData->isChanged = TRUE;
-			return 0;
-
-		case MAF_SELECTALL:
-			if (pDrawSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
-				pDrawSelf->modelData->rgSelectedRange.nFirstSample = 1;
-				pDrawSelf->modelData->rgSelectedRange.nLastSample = pDrawSelf->modelData->dataSize / pDrawSelf->modelData->wfxFormat.nBlockAlign;
-				pDrawSelf->rcSelectedRange.left = 0;
-				pDrawSelf->rcSelectedRange.right = pDrawSelf->rcClientSize.right - 1;
-				InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			}
-			return 0;
 
 		case MAF_SAVESELECTED:
 			if (pDrawSelf->modelData->rgSelectedRange.nFirstSample != pDrawSelf->modelData->rgSelectedRange.nLastSample) {
@@ -363,31 +297,47 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 				return -2;
 			}
 
-		case MAF_REVERSESELECTED:
-			DrawingArea_ReverseSelected(pDrawSelf);
-			pDrawSelf->modelData->isChanged = TRUE;
+		case UPD_CURSOR:
+			pDrawSelf->rcSelectedRange.left = lParam;
+			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
+			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
+			return 0;
+		case UPD_SELECTION: // currently unused
+			pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
+			pDrawSelf->rcSelectedRange.right = GET_Y_LPARAM(lParam);
+			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
+			return 0;
+		case UPD_SELECTALL:
+			pDrawSelf->rcSelectedRange.left = 0;
+			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcClientSize.right - 1;
+			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
+			return 0;
+		case UPD_CACHE:
+			DrawingArea_UpdateCache(pDrawSelf, (PUPDATEINFO)lParam);
+			HeapFree(GetProcessHeap(), 0, (PUPDATEINFO)lParam);
+			InvalidateRect(pSelf->winHandle, NULL, TRUE);
 			return 0;
 
-		case MAF_ISCHANGED:
-			return pDrawSelf->modelData->isChanged;
-
 		case WM_LBUTTONDOWN:
-			SetCapture(pDrawSelf->winHandle);
-			pDrawSelf->modelData->rgSelectedRange.nFirstSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
-			pDrawSelf->modelData->rgSelectedRange.nLastSample = pDrawSelf->modelData->rgSelectedRange.nFirstSample;
+			// send message to main window and tell about the selection changes
+			// Send and not Post because model must be updated immediately
+			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
+			rgNewSelectedRange->nFirstSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
+			rgNewSelectedRange->nLastSample = rgNewSelectedRange->nFirstSample;
+			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, FALSE, rgNewSelectedRange);
+
 			pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
 			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
 			
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			ReleaseCapture();
 			return 0;
 		case WM_RBUTTONDOWN:
-			pDrawSelf->modelData->rgSelectedRange.nLastSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
+			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
+			rgNewSelectedRange->nLastSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
+			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, TRUE, rgNewSelectedRange);
+
 			pDrawSelf->rcSelectedRange.right = GET_X_LPARAM(lParam);
-			if (pDrawSelf->modelData->rgSelectedRange.nLastSample < pDrawSelf->modelData->rgSelectedRange.nFirstSample) {
-				unsigned long tmp = pDrawSelf->modelData->rgSelectedRange.nFirstSample;
-				pDrawSelf->modelData->rgSelectedRange.nFirstSample = pDrawSelf->modelData->rgSelectedRange.nLastSample;
-				pDrawSelf->modelData->rgSelectedRange.nLastSample = tmp;
+			if (pDrawSelf->rcSelectedRange.right < pDrawSelf->rcSelectedRange.left) {
 				long cTmp = pDrawSelf->rcSelectedRange.left;
 				pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
 				pDrawSelf->rcSelectedRange.right = cTmp;
@@ -407,10 +357,8 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			DrawingArea_UpdateBackBuffer(pDrawSelf); // ADD CHECKING!!
 			pDrawSelf->rcSelectedRange.top = pDrawSelf->rcClientSize.top;
 			pDrawSelf->rcSelectedRange.bottom = pDrawSelf->rcClientSize.bottom;
-			if (pDrawSelf->modelData->curFile != INVALID_HANDLE_VALUE) DrawingArea_UpdateCache(pDrawSelf);
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
 		case WM_DESTROY:
-			// check isChanged //TOOD: what?
 			DrawingArea_DestroyBackBuffer(pDrawSelf);
 			//delete objects. // TODO: Delete inner objects?
 			HeapFree(GetProcessHeap(), 0, pDrawSelf);

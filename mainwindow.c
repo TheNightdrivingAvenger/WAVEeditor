@@ -48,6 +48,7 @@ void MainWindow_ChangeCurFile(PMAINWINDATA pSelf)
 		HANDLE hFile;
 		if ((hFile = openFile(chosenFile)) != INVALID_HANDLE_VALUE)
 		{
+			// TODO: continue to detach the child window from model
 			switch (SendMessage(pSelf->drawingAreaHandle, DM_SETINPUTFILE, (WPARAM)hFile, 0)) {
 				case 0:
 					SetWindowText(pSelf->winHandle, chosenFile);
@@ -156,6 +157,15 @@ void MainWindow_SaveFileAs(PMAINWINDATA pSelf, BOOL saveSelected)
 	}
 }
 
+void MainWindow_SendUPDCACHEToView(PMAINWINDATA pSelf)
+{
+	updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
+	updInfo->soundData = pMainSelf->modelData->soundData;
+	updInfo->dataSize = pMainSelf->modelData->dataSize;
+	updInfo->wfxFormat = &(pMainSelf->modelData->wfxFormat);
+	SendMessage(pMainSelf->drawingAreaHandle, UPD_CACHE, 0, updInfo);
+}
+
 LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	HWND drawingAreaHandle;
@@ -163,6 +173,8 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	PMAINWINDATA pMainSelf;
 	RECT newSize;
 	LPMINMAXINFO lpMMI;
+
+	PUPDATEINFO updInfo;
 
 	const float DRAWINGWINPOSYSCALE = 0.1;
 
@@ -174,6 +186,9 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		pMainSelf->winHandle = hWnd;
 		GetClientRect(pMainSelf->winHandle, &newSize);
 
+		pMainSelf->modelData = (PMODELDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MODELDATA));
+		pMainSelf->modelData->curFile = INVALID_HANDLE_VALUE;
+		pMainSelf->modelData->playerState = stopped;
 		
 		drawingAreaHandle = CreateWindowEx(0, L"DrawingArea", NULL, WS_CHILD | WS_VISIBLE,
 			0, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), hWnd, 0, 0, NULL);
@@ -205,30 +220,80 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 					MainWindow_SaveFileAs(pMainSelf, FALSE);
 					return 0;
 				case IDM_COPY:
-					SendMessage(pMainSelf->drawingAreaHandle, ADM_COPY, 0, 0);
+					// structure assignment is OK, just a memory copy
+					pMainSelf->modelData->rgCopyRange = pSelf->modelData->rgSelectedRange;
 					break;
 				case IDM_DELETE:
-					SendMessage(pMainSelf->drawingAreaHandle, ADM_DELETE, 0, 0);
+					if (pMainSelf->modelData->rgSelectedRange.nFirstSample != pMainSelf->modelData->rgSelectedRange.nLastSample) {
+						deletePiece(pMainSelf->modelData);
+						pMainSelf->modelData->rgSelectedRange.nFirstSample = pMainSelf->modelData->rgSelectedRange.nLastSample = 0;
+						// if we deleted something, then copied piece is no longer valid
+						pMainSelf->modelData->rgCopyRange.nFirstSample = pMainSelf->modelData->rgCopyRange.nLastSample = 0;
+
+						MainWindow_SendUPDCACHEToView(pMainSelf);
+						SendMessage(pMainSelf->drawingAreaHandle, UPD_CURSOR, 0, 0);
+					}
+					pMainSelf->modelData->isChanged = TRUE;
 					break;
 				case IDM_PASTE:
-					SendMessage(pMainSelf->drawingAreaHandle, ADM_PASTE, 0, 0);
+					if (pMainSelf->modelData->rgCopyRange.nFirstSample != pMainSelf->modelData->rgCopyRange.nLastSample) {
+						pastePiece(pMainSelf->modelData);
+						pMainSelf->modelData->rgSelectedRange.nLastSample = pMainSelf->modelData->rgSelectedRange.nFirstSample = 0;
+
+						MainWindow_SendUPDCACHEToView(pMainSelf);
+						SendMessage(pMainSelf->drawingAreaHandle, UPD_CURSOR, 0, 0);
+					}
+					pMainSelf->modelData->isChanged = TRUE;
 					break;
 				case IDM_MAKESILENT:
-					SendMessage(pMainSelf->drawingAreaHandle, ADM_MAKESILENT, 0, 0);
+					if (pMainSelf->modelData->rgSelectedRange.nFirstSample != pMainSelf->modelData->rgSelectedRange.nLastSample) {
+						makeSilent(pMainSelf->modelData);
+						pMainSelf->modelData->rgSelectedRange.nLastSample = pMainSelf->modelData->rgSelectedRange.nFirstSample = 0;
+
+						MainWindow_SendUPDCACHEToView(pMainSelf);
+						SendMessage(pMainSelf->drawingAreaHandle, UPD_CURSOR, 0, 0);
+					}
+					pMainSelf->modelData->isChanged = TRUE;
 					break;
 				case IDM_SELECTALL:
-					SendMessage(pMainSelf->drawingAreaHandle, ADM_SELECTALL, 0, 0);
+					if (pDrawSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+						pMainSelf->modelData->rgSelectedRange.nFirstSample = 1;
+						pMainSelf->modelData->rgSelectedRange.nLastSample = pMainSelf->modelData->dataSize / pMainSelf->modelData->wfxFormat.nBlockAlign;
+						
+						SendMessage(pMainSelf->drawingAreaHandle, UPD_SELECTALL, 0, 0);
+					}
 					break;
 				case IDM_SAVESELECTED:
+					// TODO: sort this
 					MainWindow_SaveFileAs(pMainSelf, TRUE);
 					break;
 				case IDM_REVERSESELECTED:
-					SendMessage(pMainSelf->drawingAreaHandle, ADM_REVERSESELECTED, 0, 0);
+					if (pMainSelf->modelData->rgSelectedRange.nFirstSample != pMainSelf->modelData->rgSelectedRange.nLastSample) {
+						reversePiece(pMainSelf->modelData);
+						
+						MainWindow_SendUPDCACHEToView(pMainSelf);
+					}
+					pDrawSelf->modelData->isChanged = TRUE;
 					break;
 				case IDM_ABOUT:
-					MessageBoxW(pMainSelf->winHandle, L"Аудиоредактор WAVE-файлов.\nЕремеев Г. С., гр. 751002. БГУИР, ФКСиС, кафедра ПОИТ, 2019 г.", L"О программе", MB_ICONINFORMATION);
+					MessageBox(pMainSelf->winHandle, L"Аудиоредактор WAVE-файлов.\nЕремеев Г. С., гр. 751002. БГУИР, ФКСиС, кафедра ПОИТ, 2019 г.", L"О программе", MB_ICONINFORMATION);
 					break;
 			}
+			return 0;
+		case UPD_SELECTEDRANGE:
+			if (!wParam) {
+				// only left click has occured, nothing has been selected yet
+				pMainSelf->modelData.rgSelectedRange.nFirstSample = ((PRANGE)lParam)->nFirstSample;
+			} else {
+				// right click occured, we have a selected range
+				pMainSelf->modelData.rgSelectedRange.nLastSample = ((PRANGE)lParam)->nLastSample;
+				if (pMainSelf->modelData->rgSelectedRange.nLastSample < pMainSelf->modelData->rgSelectedRange.nFirstSample) {
+					unsigned long tmp = pMainSelf->modelData->rgSelectedRange.nFirstSample;
+					pMainSelf->modelData->rgSelectedRange.nFirstSample = pMainSelf->modelData->rgSelectedRange.nLastSample;
+					pMainSelf->modelData->rgSelectedRange.nLastSample = tmp;
+				}
+			}
+			HeapFree(GetProcessHeap(), 0, (PRANGE)lParam);
 			return 0;
 		case WM_GETMINMAXINFO:
 			lpMMI = (LPMINMAXINFO)lParam;
@@ -241,11 +306,12 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 				MoveWindow(pMainSelf->drawingAreaHandle, 0, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, 
 					truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), FALSE);
 				MoveWindow(pMainSelf->toolsWinHandle, 0, 0, newSize.right, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), TRUE);
+
+				MainWindow_SendUPDCACHEToView(pMainSelf);
 			}
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
-
 		case WM_CLOSE:
-			if (SendMessage(pMainSelf->drawingAreaHandle, ADM_ISCHANGED, 0, 0)) {
+			if (pMainSelf->modelData->isChanged) {
 				modalRes = MessageBoxW(pMainSelf->winHandle, L"Есть несохранённые изменения. Желаете их сохранить?", L"Внимание", MB_YESNOCANCEL);
 				if (modalRes == IDYES) {
 					MainWindow_SaveFileAs(pMainSelf, FALSE);
