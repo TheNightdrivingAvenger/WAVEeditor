@@ -21,10 +21,12 @@ void ToolsPanel_Draw(PTOOLSWINDATA pSelf)
 {
 	SaveDC(pSelf->backDC);
 	FillRect(pSelf->backDC, &pSelf->rcClientSize, pSelf->bckgndBrush);
-	
-	for (int i = 0; i < pSelf->totalButtonsCount; i++) {
-		FillRect(pSelf->backDC, &pSelf->buttons[i].buttonPos, pSelf->buttonBckgndBrush);
-		pSelf->buttons[i].Button_Draw(&(pSelf->buttons[i]), pSelf->backDC);
+
+	PLISTNODE node = pSelf->buttonsContainer->first;
+	while (node != NULL) {
+		FillRect(pSelf->backDC, &node->pButton->buttonPos, pSelf->buttonBckgndBrush);
+		node->pButton->Button_Draw(node->pButton, pSelf->backDC);
+		node = node->next;
 	}
 
 	RestoreDC(pSelf->backDC, -1);
@@ -84,14 +86,30 @@ BOOL ToolsPanel_CreateBackBuffer(PTOOLSWINDATA pSelf)
 	return FALSE;
 }
 
+int ToolsPanel_Stop_OnClick(void)
+{
+	return 0;
+}
+
+int ToolsPanel_Pause_OnClick(void)
+{
+	return 0;
+}
+
+int ToolsPanel_Play_OnClick(void)
+{
+	return 0;
+}
+
 LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	PAINTSTRUCT ps;
 	PTOOLSWINDATA pToolsSelf;
 	POINT clickCoords;
+	PLISTNODE buttonNode;
 
 	if (uMsg == WM_CREATE) {
-		pToolsSelf = (PTOOLSWINDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TOOLSWINDATA));
+		pToolsSelf = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TOOLSWINDATA));
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pToolsSelf);
 		pToolsSelf->winHandle = hWnd;
 		pToolsSelf->totalButtonsCount = 3;
@@ -102,31 +120,39 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 
 		GetClientRect(pToolsSelf->winHandle, &pToolsSelf->rcClientSize);
 
-		pToolsSelf->buttons = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(BUTTONINFO) * pToolsSelf->totalButtonsCount);
-
-		// TODO: sort things out with Variable Length Arrays here. Improve buttons objects initialization
+		//PBUTTONINFO buttonInfoArray[pToolsSelf->totalButtonsCount];
+		PBUTTONINFO buttonInfoArray[3];
 		RECT *resArray[3];
 		for (int i = 0; i < pToolsSelf->totalButtonsCount; i++) {
-			resArray[i] = &pToolsSelf->buttons[i].buttonPos;
+			buttonInfoArray[i] = HeapAlloc(GetProcessHeap(), 0, sizeof(BUTTONINFO)); // memory is freed by the list when it's destroyed
+			resArray[i] = &buttonInfoArray[i]->buttonPos;
 		}
 		calculateButtonsPositions(pToolsSelf->totalButtonsCount, resArray, pToolsSelf->rcClientSize);
 
 		// *** BUTTONS INTERFACE OBJECTS INITIALIZATION *** /// 0 -- play button, 1 -- pause button, 2 -- stop button
-		pToolsSelf->buttons[0].pen = CreatePen(PS_SOLID, 3, RGB(210,210,210));
-		pToolsSelf->buttons[0].brush = CreateSolidBrush(RGB(65,208,34));
-		pToolsSelf->buttons[0].Button_Draw = PlayButton_Draw;
-		pToolsSelf->buttons[0].Button_OnClick = PlayButton_OnClick;
+		// TODO: improve this and make it extensible
+		buttonInfoArray[0]->pen = CreatePen(PS_SOLID, 3, RGB(210,210,210));
+		buttonInfoArray[0]->brush = CreateSolidBrush(RGB(65,208,34));
+		buttonInfoArray[0]->Button_Draw = PlayButton_Draw;
+		buttonInfoArray[0]->Button_OnClick = PlayButton_OnClick;
 
-		pToolsSelf->buttons[1].pen = pToolsSelf->buttons[0].pen;
-		pToolsSelf->buttons[1].brush = CreateSolidBrush(RGB(0,0,0));
-		pToolsSelf->buttons[1].Button_Draw = PauseButton_Draw;
-		pToolsSelf->buttons[1].Button_OnClick = PauseButton_OnClick;
+		buttonInfoArray[1]->pen = buttonInfoArray[0]->pen;
+		buttonInfoArray[1]->brush = CreateSolidBrush(RGB(0,0,0));
+		buttonInfoArray[1]->Button_Draw = PauseButton_Draw;
+		buttonInfoArray[1]->Button_OnClick = PauseButton_OnClick;
 
-		pToolsSelf->buttons[2].pen = pToolsSelf->buttons[0].pen;
-		pToolsSelf->buttons[2].brush = CreateSolidBrush(RGB(254,5,18));
-		pToolsSelf->buttons[2].Button_Draw = StopButton_Draw;
-		pToolsSelf->buttons[2].Button_OnClick = StopButton_OnClick;
+		buttonInfoArray[2]->pen = buttonInfoArray[0]->pen;
+		buttonInfoArray[2]->brush = CreateSolidBrush(RGB(254,5,18));
+		buttonInfoArray[2]->Button_Draw = StopButton_Draw;
+		buttonInfoArray[2]->Button_OnClick = StopButton_OnClick;
 
+		pToolsSelf->buttonsContainer = List_Create(buttonInfoArray[0], ToolsPanel_Play_OnClick);
+		List_Add(pToolsSelf->buttonsContainer, buttonInfoArray[1], ToolsPanel_Pause_OnClick);
+		List_Add(pToolsSelf->buttonsContainer, buttonInfoArray[2], ToolsPanel_Stop_OnClick);
+		// TODO: improve this and make it extensible
+		//for (int i = 1; i < buttonInfoArray; i++) {
+			//List_Add(buttonInfoArray[i], ToolsPanel_Play_OnClick);
+		//}
 		// *** //
 		ToolsPanel_CreateBackBuffer(pToolsSelf);	// ADD CHECKING!!!
 
@@ -136,25 +162,12 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	pToolsSelf = (PTOOLSWINDATA)GetWindowLong(hWnd, 0);
 	if (pToolsSelf == NULL) return DefWindowProc(hWnd, uMsg, wParam, lParam);
 
-	//RECT *resArray[pToolsSelf->totalButtonsCount];
 	switch (uMsg) {
 		case WM_LBUTTONDOWN:
 			clickCoords = mouseCoordsToPoint(lParam);
-			int i = 0;
-			for (; i < pToolsSelf->totalButtonsCount; i++) {
-				if (PtInRect(&(pToolsSelf->buttons[i].buttonPos), clickCoords)) {
-					pToolsSelf->buttons[i].Button_OnClick();
-					break;
-				}
-			}
-			switch (i) {
-				case 0: //play
-					Player_Play(hWnd, pToolsSelf->modelData);
-					break;
-				case 1: //pause
-					break;
-				case 2: //stop
-					break;
+			if ((buttonNode = List_FindBtnByCoords(pToolsSelf->buttonsContainer, clickCoords)) != NULL) {
+				buttonNode->pButton->Button_OnClick(); // tell button to repaint or something
+				buttonNode->handler(); // perform according to the button action
 			}
 			return 0;
 		case WM_PAINT:
@@ -165,9 +178,14 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			return 0;
 		case WM_SIZE:
 			GetClientRect(pToolsSelf->winHandle, &(pToolsSelf->rcClientSize));
+			// TODO: VLA or pointer
 			RECT *resArray[3];
-			for (int i = 0; i < pToolsSelf->totalButtonsCount; i++) {
-				resArray[i] = &pToolsSelf->buttons[i].buttonPos;
+			PLISTNODE node = pToolsSelf->buttonsContainer->first;
+			int i = 0;
+			while (node != NULL) {
+				resArray[i] = &node->pButton->buttonPos;
+				node = node->next;
+				i++;
 			}
 			calculateButtonsPositions(pToolsSelf->totalButtonsCount, resArray, pToolsSelf->rcClientSize);
 			ToolsPanel_UpdateBackBuffer(pToolsSelf); // add checking?

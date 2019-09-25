@@ -475,7 +475,9 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 					(int)truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), FALSE);
 				MoveWindow(pMainSelf->toolsWinHandle, 0, 0, newSize.right, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), TRUE);
 
-				MainWindow_SendUPDCACHEToView(pMainSelf);
+				if (pMainSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+					MainWindow_SendUPDCACHEToView(pMainSelf);
+				}
 			}
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
 		case WM_CLOSE:

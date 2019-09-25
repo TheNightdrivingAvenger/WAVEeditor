@@ -5,4 +5,4 @@ typedef struct _tagPLAYERDATA {
 	WAVEHDR lastUsedHeader;
 } PLAYERDATA, *PPLAYERDATA;
 
-int Player_Play(HWND responsibleWindow, PMODELDATA pModel);
+int Player_Play(PPLAYERDATA pSelf, void *soundData, int dataSize);

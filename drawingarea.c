@@ -19,10 +19,11 @@
 BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 {
 	// TODO: updating the cache means there has been some changes in the sound data. But what I do here is just set view from the
-	// first to the last sample. Not good for planned scaling
+	// first to the last sample. Not good for planned image scaling
 	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / updateInfo->wfxFormat->nBlockAlign;
 	pSelf->soundMetadata = *(updateInfo->wfxFormat);
 	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
+
 	return res;
 }
 
@@ -139,11 +140,11 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
 			return 0;
 		case UPD_CACHE:
-			// TRUE if everything update OK, FALSE otherwise
+			// TRUE if everything updated OK, FALSE otherwise
 			res = DrawingArea_UpdateCache(pDrawSelf, (PUPDATEINFO)lParam);
 			HeapFree(GetProcessHeap(), 0, (PUPDATEINFO)lParam);
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			return !res;
+			return res;
 		case UPD_DISPLAYEDRANGE:
 			pDrawSelf->rgCurDisplayedRange.nFirstSample = ((PRANGE)lParam)->nFirstSample;
 			pDrawSelf->rgCurDisplayedRange.nLastSample = ((PRANGE)lParam)->nLastSample;

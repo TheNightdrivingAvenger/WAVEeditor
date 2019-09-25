@@ -2,7 +2,6 @@
 #include <Windows.h>
 
 #include "headers\buttoninfo.h"
-#include "headers\buttons.h"
 
 void PlayButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 {
@@ -75,12 +74,15 @@ void StopButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 // TODO: OnClick should just change the button's state (for example change the style)
 void PlayButton_OnClick(void)
 {
+	MessageBoxW(NULL, L"Play clicked", L"", MB_OK);
 }
 
 void PauseButton_OnClick(void)
 {
+	MessageBoxW(NULL, L"Pause clicked", L"", MB_OK);
 }
 
 void StopButton_OnClick(void)
 {
+	MessageBoxW(NULL, L"Stop clicked", L"", MB_OK);
 }

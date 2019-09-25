@@ -5,9 +5,7 @@ typedef struct tagBUTTONINFO {
 	RECT buttonPos;
 	HPEN pen;
 	HBRUSH brush;
-	//Button_DrawAction Button_Draw;
 	void (*Button_Draw)(struct tagBUTTONINFO *, HDC);
-	//Button_OnClickAction Button_OnClick;
 	void (*Button_OnClick)(void);
 
 } BUTTONINFO, *PBUTTONINFO;

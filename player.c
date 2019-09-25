@@ -26,21 +26,21 @@ PPLAYERDATA Player_Init(PMODELDATA pModel, HWND callbackWindow)
 	}
 }
 
-int Player_Play(PPLAYERDATA pSelf, PMODELDATA pModel)
+int Player_Play(PPLAYERDATA pSelf, void *soundData, int dataSize)
 {
 	HWAVEOUT deviceHandle;
 	MMRESULT res;
 
 	ZeroMemory(&pSelf->lastUsedHeader, sizeof(WAVEHDR));
-	pSelf->lastUsedHeader.lpData = pModel->soundData;
-	pSelf->lastUsedHeader.dwBufferLength = pModel->dataSize;
+	pSelf->lastUsedHeader.lpData = soundData;
+	pSelf->lastUsedHeader.dwBufferLength = dataSize;
 
 	res = waveOutPrepareHeader(deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
 
 	if (res == MMSYSERR_NOERROR)
 	{
 		// header is prepared, can play
-		res = waveOutWrite(deviceHandle, &waveHdr, sizeof(WAVEHDR));
+		res = waveOutWrite(deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
 	}
 	else
 	{
@@ -54,5 +54,5 @@ int Player_Play(PPLAYERDATA pSelf, PMODELDATA pModel)
 void Player_CleanUpAfterPlaying(PPLAYERDATA pSelf)
 {
 	waveOutReset(pSelf->deviceHandle);
-	waveOutUnprepareHeader(pSelf->deviceHandle, pSelf->lastUsedHeader, sizeof(WAVEHDR));
+	waveOutUnprepareHeader(pSelf->deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
 }

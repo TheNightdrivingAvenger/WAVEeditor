@@ -1,7 +1,6 @@
 #pragma once
 
 void ToolsPanel_RegisterClass(HINSTANCE hInstance, const wchar_t *className);
-typedef int(*ClickHandler)(void);
 
 #include "headers\modeldata.h"
 #include "headers\buttoninfo.h"
@@ -17,9 +16,5 @@ typedef struct tagTOOLSWINDATA {
 	HBRUSH buttonBckgndBrush;
 	HBITMAP backBufBitmap;
 	int totalButtonsCount;
-	PBUTTONINFO buttons; // TODO: obsolete?
-	PLISTDATA buttonsContainer;
-	/*RECT rcPlayButtonPos;	// those RECTs store ABSOLUTE buttons coordinate in the parent (Tools) window
-	RECT rcPauseButtonPos;	// so can be used to determine whether click was on them or not
-	RECT rcStopButtonPos;*/
+	PLISTDATA buttonsContainer;	// memory is freed by the list when it's destroyed
 } TOOLSWINDATA, *PTOOLSWINDATA;
