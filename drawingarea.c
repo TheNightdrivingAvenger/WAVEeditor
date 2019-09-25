@@ -15,186 +15,28 @@
 #include "headers\drawingarea.h"
 #include "headers\constants.h"
 #include "headers\sounddrawer.h"
-#include "headers\fileworker.h"
-#include "headers\soundworker.h"
 
 BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 {
 	// TODO: updating the cache means there has been some changes in the sound data. But what I do here is just set view from the
 	// first to the last sample. Not good for planned scaling
 	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / updateInfo->wfxFormat->nBlockAlign;
+	pSelf->soundMetadata = *(updateInfo->wfxFormat);
 	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
 	return res;
 }
 
-BOOL checkFormat(PWAVEFORMATEX pWfx)
-{
-	return (pWfx->wBitsPerSample >= 8 && pWfx->wBitsPerSample <= 16)
-		&& (pWfx->nChannels > 0 && pWfx->nChannels <= 2) && (pWfx->nSamplesPerSec > 0 && pWfx->nSamplesPerSec <= 44100) 
-		&& (pWfx->nAvgBytesPerSec == (pWfx->nSamplesPerSec * pWfx->nChannels * (pWfx->wBitsPerSample / 8))) 
-		&& (pWfx->nBlockAlign == (pWfx->nChannels * (pWfx->wBitsPerSample / 8)));
-}
-
-/*
-* Return codes: 0 OK
-*				1 not RIFF
-* 				2 not WAVE
-*				3 fmt not found
-*				4 not supported format
-*				5 data not found
-*				6 failed reading from file
-*				7 not enough memory
-*/
-LRESULT DrawingArea_FileChange(PDRAWINGWINDATA pSelf, HANDLE hNewFile)
-{
-	//working with the file: reading chunks and settings structure's fields
-	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
-		CloseHandle(pSelf->modelData->curFile);
-		pSelf->modelData->curFile = INVALID_HANDLE_VALUE;
-	}
-
-	BOOL heapRes;
-	if (pSelf->modelData->soundData != NULL) {
-		heapRes = HeapFree(GetProcessHeap(), 0, pSelf->modelData->soundData);
-		memset(&pSelf->modelData->wfxFormat, 0, sizeof(pSelf->modelData->wfxFormat));
-		pSelf->modelData->soundData = NULL;
-	}
-
-	DWORD readres;
-	CHUNK curChunk = getChunk(hNewFile);
-	if (strncmp(curChunk.chunkID, "RIFF", CHUNKIDLENGTH) != 0) {
-		return 1;
-	} else {
-		ReadFile(hNewFile, curChunk.chunkID, CHUNKIDLENGTH, &readres, NULL);
-		curChunk.chunkID[CHUNKIDLENGTH] = '\0';
-		if (strncmp(curChunk.chunkID, "WAVE", 4) != 0) {
-			return 2;
-		}
-	}
-
-	BOOL chunkNotFound;
-	curChunk.chunkSize = 0;
-	do {
-		SetFilePointer(hNewFile, curChunk.chunkSize, NULL, FILE_CURRENT);
-		curChunk = getChunk(hNewFile);
-		chunkNotFound = (curChunk.chunkID[0] == '\0');
-	} while (!chunkNotFound && (strncmp(curChunk.chunkID, "fmt ", CHUNKIDLENGTH) != 0));
-
-	if (!chunkNotFound) {
-		ReadFile(hNewFile, &(pSelf->modelData->wfxFormat), sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD), &readres, NULL);
-		
-		if (checkFormat(&pSelf->modelData->wfxFormat)) {
-			if (curChunk.chunkSize > sizeof(WAVEFORMATEX)) {
-				return 4; // extensible WAV
-			}
-		} else {
-			return 4;
-		}
-	} else {
-		return 3;
-	}
-
-	curChunk.chunkSize = 0;
-	do {
-		SetFilePointer(hNewFile, curChunk.chunkSize, NULL, FILE_CURRENT);
-		curChunk = getChunk(hNewFile);
-		chunkNotFound = (curChunk.chunkID[0] == '\0');
-	} while (!chunkNotFound && (strncmp(curChunk.chunkID, "data", CHUNKIDLENGTH) != 0));
-
-	if (!chunkNotFound) {
-		if ((pSelf->modelData->soundData = HeapAlloc(GetProcessHeap(), 0, curChunk.chunkSize)) != NULL) {		
-			pSelf->modelData->dataSize = curChunk.chunkSize;
-			if (ReadFile(hNewFile, pSelf->modelData->soundData, curChunk.chunkSize, &readres, NULL)) {
-				pSelf->modelData->rgCurDisplayedRange.nFirstSample = 0;
-				pSelf->modelData->rgCurDisplayedRange.nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign; //same range for every channel
-				//pSelf->modelData->rgCurDisplayedRange.nLastSample = 3600;
-
-				pSelf->rcSelectedRange.left = 0;
-				pSelf->rcSelectedRange.right = 0;
-				if (!DrawingArea_UpdateCache(pSelf)) {
-					return 7;
-				}
-				pSelf->modelData->curFile = hNewFile;
-				return 0;
-			} else {
-				HeapFree(GetProcessHeap(), 0, pSelf->modelData->soundData);
-				return 6;
-			}
-		} else {
-			return 7;
-		}
-	} else {
-		return 5;
-	}
-}
-
-// returns zero if saved successfully
-LRESULT DrawingArea_SaveFile(PDRAWINGWINDATA pSelf, HANDLE hFile, BOOL saveSelected)
-{
-	if (pSelf->modelData->curFile == INVALID_HANDLE_VALUE || pSelf->modelData->dataSize == 0) return -2;
-
-	DWORD writeRes;
-	struct writingDataStart {
-		char riffTag[CHUNKIDLENGTH];
-		unsigned long fileLen;
-		char waveTag[CHUNKIDLENGTH];
-		char fmtTag[CHUNKIDLENGTH];
-		unsigned long fmtLen;
-	} dataStart;
-	struct writingDataEnd {
-		char dataTag[CHUNKIDLENGTH];
-		unsigned long dataLen;
-	} dataEnd;
-	memcpy(&dataStart.riffTag, "RIFF", CHUNKIDLENGTH);
-	dataStart.fileLen = 4 + 8 + pSelf->modelData->dataSize + 8 + sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD);
-	memcpy(&dataStart.waveTag, "WAVE", CHUNKIDLENGTH);
-	memcpy(&dataStart.fmtTag, "fmt ", CHUNKIDLENGTH);
-	dataStart.fmtLen = sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD);
-	
-	memcpy(&dataEnd.dataTag, "data", CHUNKIDLENGTH);
-
-	unsigned long amountToWrite, bufferStart;
-	if (saveSelected) {
-		amountToWrite = (pSelf->modelData->rgSelectedRange.nLastSample - pSelf->modelData->rgSelectedRange.nFirstSample + 1) 
-																							* pSelf->modelData->wfxFormat.nBlockAlign;
-		bufferStart = (pSelf->modelData->rgSelectedRange.nFirstSample - 1) * pSelf->modelData->wfxFormat.nBlockAlign;
-	} else {
-		amountToWrite = pSelf->modelData->dataSize;
-		bufferStart = 0;
-	}
-	dataEnd.dataLen = amountToWrite;
-
-	if (WriteFile(hFile, &dataStart, sizeof(struct writingDataStart), &writeRes, NULL)) {
-		DWORD chunkSize = sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD);
-		if (writeRes == sizeof(struct writingDataStart) && WriteFile(hFile, &pSelf->modelData->wfxFormat, chunkSize, &writeRes, NULL)) {
-			if (writeRes == chunkSize && WriteFile(hFile, &dataEnd, sizeof(struct writingDataEnd), &writeRes, NULL)) {
-				if (writeRes == sizeof(struct writingDataEnd) 			// NOT DATA SIZE
-						&& WriteFile(hFile, (char *)pSelf->modelData->soundData + bufferStart, amountToWrite, &writeRes, NULL)) {
-					if (writeRes == amountToWrite) {
-						return 0; //write OK
-					}
-				}
-			}
-		}
-	}
-
-	DWORD err;
-	if ((err = GetLastError()) != 0) { //writing error
-		return (LRESULT)err;
-	} else {
-		return -1; // no writing error, but probably written less than should be
-	}
-}
-
 unsigned long DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoords)
 {
-	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
-		if (pSelf->modelData->samplesInBlock == 1) {
-			return min(pSelf->modelData->rgCurDisplayedRange.nLastSample, pSelf->modelData->rgCurDisplayedRange.nFirstSample
+	// cache pointer can't be null, because when file changing occurs, cache gets updated with main window message
+	// so it's used here as a marker if there's any file currently open
+	if (pSelf->minMaxChunksCache != NULL) {
+		if (pSelf->samplesInBlock == 1) {
+			return min(pSelf->rgCurDisplayedRange.nLastSample, pSelf->rgCurDisplayedRange.nFirstSample
 				+ (int)roundf(LOWORD(clickCoords) / (float)pSelf->stepX));
 		} else {
-			return min(pSelf->modelData->rgCurDisplayedRange.nLastSample, pSelf->modelData->rgCurDisplayedRange.nFirstSample 
-				+ pSelf->modelData->samplesInBlock * LOWORD(clickCoords));
+			return min(pSelf->rgCurDisplayedRange.nLastSample, pSelf->rgCurDisplayedRange.nFirstSample 
+				+ pSelf->samplesInBlock * LOWORD(clickCoords));
 		}
 	}
 	return 0;
@@ -208,7 +50,7 @@ void DrawingArea_DrawWave(PDRAWINGWINDATA pSelf)
 	FillRect(pSelf->backDC, &pSelf->rcClientSize, pSelf->bckgndBrush);
 
 	if (pSelf->minMaxChunksCache != NULL) {
-		drawRegion(pSelf);
+		drawRegion(pSelf, &pSelf->soundMetadata);
 	}
 	RestoreDC(pSelf->backDC, -1);
 }
@@ -258,7 +100,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		pDrawSelf = (PDRAWINGWINDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DRAWINGWINDATA));
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pDrawSelf);
 		pDrawSelf->winHandle = hWnd;
-		pDrawSelf->parentWindow = ((PCREATESTRUCT)lParam)->hWndParent;
+		pDrawSelf->parentWindow = ((LPCREATESTRUCT)lParam)->hwndParent;
 
 		pDrawSelf->curPen = CreatePen(PS_SOLID, 1, RGB(255,128,0));
 		pDrawSelf->borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
@@ -268,6 +110,8 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		GetClientRect(pDrawSelf->winHandle, &pDrawSelf->rcClientSize);
 		pDrawSelf->rcSelectedRange.top = pDrawSelf->rcClientSize.top;
 		pDrawSelf->rcSelectedRange.bottom = pDrawSelf->rcClientSize.bottom;
+		pDrawSelf->rcSelectedRange.left = 0;
+		pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
 
 		DrawingArea_CreateBackBuffer(pDrawSelf); // ADD CHECKING!!!
 
@@ -279,52 +123,39 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 
 	switch (uMsg)
 	{
-		// setup: filling WAVEFORMATEX, buffers and other values
-		case SM_SETINPUTFILE:
-			res = DrawingArea_FileChange(pDrawSelf, (HANDLE)wParam);
-			pDrawSelf->modelData->isChanged = FALSE;
-			return res;
-		case SM_SAVEFILEAS:
-			res = DrawingArea_SaveFile(pDrawSelf, (HANDLE)wParam, FALSE);
-			pDrawSelf->modelData->isChanged = FALSE;
-			return res;
-
-		case MAF_SAVESELECTED:
-			if (pDrawSelf->modelData->rgSelectedRange.nFirstSample != pDrawSelf->modelData->rgSelectedRange.nLastSample) {
-				res = DrawingArea_SaveFile(pDrawSelf, (HANDLE)wParam, TRUE);
-				return res;				
-			} else {
-				return -2;
-			}
-
 		case UPD_CURSOR:
 			pDrawSelf->rcSelectedRange.left = lParam;
 			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
 			return 0;
-		case UPD_SELECTION: // currently unused
-			pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
-			pDrawSelf->rcSelectedRange.right = GET_Y_LPARAM(lParam);
-			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			return 0;
-		case UPD_SELECTALL:
-			pDrawSelf->rcSelectedRange.left = 0;
-			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcClientSize.right - 1;
+		case UPD_SELECTION:
+			if (wParam) {
+				pDrawSelf->rcSelectedRange.left = 0;
+				pDrawSelf->rcSelectedRange.right = pDrawSelf->rcClientSize.right - 1;
+			} else {
+				pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
+				pDrawSelf->rcSelectedRange.right = GET_Y_LPARAM(lParam);
+			}
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
 			return 0;
 		case UPD_CACHE:
-			DrawingArea_UpdateCache(pDrawSelf, (PUPDATEINFO)lParam);
+			// TRUE if everything update OK, FALSE otherwise
+			res = DrawingArea_UpdateCache(pDrawSelf, (PUPDATEINFO)lParam);
 			HeapFree(GetProcessHeap(), 0, (PUPDATEINFO)lParam);
-			InvalidateRect(pSelf->winHandle, NULL, TRUE);
+			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
+			return !res;
+		case UPD_DISPLAYEDRANGE:
+			pDrawSelf->rgCurDisplayedRange.nFirstSample = ((PRANGE)lParam)->nFirstSample;
+			pDrawSelf->rgCurDisplayedRange.nLastSample = ((PRANGE)lParam)->nLastSample;
+			HeapFree(GetProcessHeap(), 0, (PRANGE)lParam);
 			return 0;
-
 		case WM_LBUTTONDOWN:
 			// send message to main window and tell about the selection changes
 			// Send and not Post because model must be updated immediately
 			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
 			rgNewSelectedRange->nFirstSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
 			rgNewSelectedRange->nLastSample = rgNewSelectedRange->nFirstSample;
-			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, FALSE, rgNewSelectedRange);
+			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, FALSE, (LPARAM)rgNewSelectedRange);
 
 			pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
 			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
@@ -334,7 +165,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		case WM_RBUTTONDOWN:
 			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
 			rgNewSelectedRange->nLastSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
-			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, TRUE, rgNewSelectedRange);
+			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, TRUE, (LPARAM)rgNewSelectedRange);
 
 			pDrawSelf->rcSelectedRange.right = GET_X_LPARAM(lParam);
 			if (pDrawSelf->rcSelectedRange.right < pDrawSelf->rcSelectedRange.left) {

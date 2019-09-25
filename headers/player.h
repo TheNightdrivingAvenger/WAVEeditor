@@ -5,4 +5,4 @@ typedef struct _tagPLAYERDATA {
 	WAVEHDR lastUsedHeader;
 } PLAYERDATA, *PPLAYERDATA;
 
-int play(HWND responsibleWindow, PMODELDATA pModel);
+int Player_Play(HWND responsibleWindow, PMODELDATA pModel);

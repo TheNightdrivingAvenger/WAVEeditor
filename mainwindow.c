@@ -13,6 +13,172 @@
 #include "headers\mainwindow.h"
 #include "headers\mainmenu.h"
 #include "headers\fileworker.h"
+#include "headers\soundworker.h"
+#include "headers\constants.h"
+
+BOOL MainWindow_SendUPDCACHEToView(PMAINWINDATA pSelf);
+
+// returns zero if saved successfully
+// -1 -- written less or something
+// -2 -- nothing to save
+// non-zero LRESULT -- GetLastError() value
+LRESULT MainWindow_SaveFile(PMAINWINDATA pSelf, HANDLE hFile, BOOL saveSelected)
+{
+	if ((pSelf->modelData->curFile == INVALID_HANDLE_VALUE) || (pSelf->modelData->dataSize == 0)
+		|| (pSelf->modelData->rgSelectedRange.nFirstSample == pSelf->modelData->rgSelectedRange.nLastSample)) return -2;
+
+	DWORD writeRes;
+	struct writingDataStart {
+		char riffTag[CHUNKIDLENGTH];
+		unsigned long fileLen;
+		char waveTag[CHUNKIDLENGTH];
+		char fmtTag[CHUNKIDLENGTH];
+		unsigned long fmtLen;
+	} dataStart;
+	struct writingDataEnd {
+		char dataTag[CHUNKIDLENGTH];
+		unsigned long dataLen;
+	} dataEnd;
+	memcpy(&dataStart.riffTag, "RIFF", CHUNKIDLENGTH);
+	dataStart.fileLen = 4 + 8 + pSelf->modelData->dataSize + 8 + sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD);
+	memcpy(&dataStart.waveTag, "WAVE", CHUNKIDLENGTH);
+	memcpy(&dataStart.fmtTag, "fmt ", CHUNKIDLENGTH);
+	dataStart.fmtLen = sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD);
+	
+	memcpy(&dataEnd.dataTag, "data", CHUNKIDLENGTH);
+
+	unsigned long amountToWrite, bufferStart;
+	if (saveSelected) {
+		amountToWrite = (pSelf->modelData->rgSelectedRange.nLastSample - pSelf->modelData->rgSelectedRange.nFirstSample + 1) 
+																							* pSelf->modelData->wfxFormat.nBlockAlign;
+		bufferStart = (pSelf->modelData->rgSelectedRange.nFirstSample - 1) * pSelf->modelData->wfxFormat.nBlockAlign;
+	} else {
+		amountToWrite = pSelf->modelData->dataSize;
+		bufferStart = 0;
+	}
+	dataEnd.dataLen = amountToWrite;
+
+	if (WriteFile(hFile, &dataStart, sizeof(struct writingDataStart), &writeRes, NULL)) {
+		DWORD chunkSize = sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD);
+		if (writeRes == sizeof(struct writingDataStart) && WriteFile(hFile, &pSelf->modelData->wfxFormat, chunkSize, &writeRes, NULL)) {
+			if (writeRes == chunkSize && WriteFile(hFile, &dataEnd, sizeof(struct writingDataEnd), &writeRes, NULL)) {
+				if (writeRes == sizeof(struct writingDataEnd) 			// NOT DATA SIZE
+						&& WriteFile(hFile, (char *)pSelf->modelData->soundData + bufferStart, amountToWrite, &writeRes, NULL)) {
+					if (writeRes == amountToWrite) {
+						return 0; //write OK
+					}
+				}
+			}
+		}
+	}
+
+	DWORD err;
+	if ((err = GetLastError()) != 0) { //writing error
+		return (LRESULT)err;
+	} else {
+		return -1; // no writing error, but probably written less than should be
+	}
+}
+
+BOOL checkFormat(PWAVEFORMATEX pWfx)
+{
+	return (pWfx->wBitsPerSample >= 8 && pWfx->wBitsPerSample <= 16)
+		&& (pWfx->nChannels > 0 && pWfx->nChannels <= 2) && (pWfx->nSamplesPerSec > 0 && pWfx->nSamplesPerSec <= 44100) 
+		&& (pWfx->nAvgBytesPerSec == (pWfx->nSamplesPerSec * pWfx->nChannels * (pWfx->wBitsPerSample / 8))) 
+		&& (pWfx->nBlockAlign == (pWfx->nChannels * (pWfx->wBitsPerSample / 8)));
+}
+
+// TODO: looks ugly, maybe I can do something about it
+/*
+* Return codes: 0 OK
+*				1 not RIFF
+* 				2 not WAVE
+*				3 fmt not found
+*				4 not supported format
+*				5 data not found
+*				6 failed reading from file
+*				7 not enough memory
+*/
+int MainWindow_FileChange(PMAINWINDATA pSelf, HANDLE hNewFile)
+{
+	//working with the file: reading chunks and setting structure's fields
+	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+		CloseHandle(pSelf->modelData->curFile);
+		pSelf->modelData->curFile = INVALID_HANDLE_VALUE;
+	}
+
+	if (pSelf->modelData->soundData != NULL) {
+		HeapFree(GetProcessHeap(), 0, pSelf->modelData->soundData);
+		ZeroMemory(&pSelf->modelData->wfxFormat, sizeof(pSelf->modelData->wfxFormat));
+		pSelf->modelData->soundData = NULL;
+	}
+
+	DWORD readres;
+	CHUNK curChunk = getChunk(hNewFile);
+	if (strncmp(curChunk.chunkID, "RIFF", CHUNKIDLENGTH) != 0) {
+		return 1;
+	} else {
+		ReadFile(hNewFile, curChunk.chunkID, CHUNKIDLENGTH, &readres, NULL);
+		curChunk.chunkID[CHUNKIDLENGTH] = '\0';
+		if (strncmp(curChunk.chunkID, "WAVE", CHUNKIDLENGTH) != 0) {
+			return 2;
+		}
+	}
+
+	BOOL chunkNotFound;
+	curChunk.chunkSize = 0;
+	do {
+		SetFilePointer(hNewFile, curChunk.chunkSize, NULL, FILE_CURRENT);
+		curChunk = getChunk(hNewFile);
+		chunkNotFound = (curChunk.chunkID[0] == '\0');
+	} while (!chunkNotFound && (strncmp(curChunk.chunkID, "fmt ", CHUNKIDLENGTH) != 0));
+
+	if (!chunkNotFound) {
+		ReadFile(hNewFile, &(pSelf->modelData->wfxFormat), sizeof(pSelf->modelData->wfxFormat) - sizeof(WORD), &readres, NULL);
+		
+		if (checkFormat(&pSelf->modelData->wfxFormat)) {
+			if (curChunk.chunkSize > sizeof(WAVEFORMATEX)) {
+				return 4; // extensible WAV
+			}
+		} else {
+			return 4;
+		}
+	} else {
+		return 3;
+	}
+
+	curChunk.chunkSize = 0;
+	do {
+		SetFilePointer(hNewFile, curChunk.chunkSize, NULL, FILE_CURRENT);
+		curChunk = getChunk(hNewFile);
+		chunkNotFound = (curChunk.chunkID[0] == '\0');
+	} while (!chunkNotFound && (strncmp(curChunk.chunkID, "data", CHUNKIDLENGTH) != 0));
+
+	if (!chunkNotFound) {
+		if ((pSelf->modelData->soundData = HeapAlloc(GetProcessHeap(), 0, curChunk.chunkSize)) != NULL) {
+			pSelf->modelData->dataSize = curChunk.chunkSize;
+			if (ReadFile(hNewFile, pSelf->modelData->soundData, curChunk.chunkSize, &readres, NULL)) {
+				PRANGE newDisplayedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
+				newDisplayedRange->nFirstSample = 0;
+				newDisplayedRange->nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign; //same range for every channel
+				SendMessage(pSelf->drawingAreaHandle, UPD_DISPLAYEDRANGE, 0, (LPARAM)newDisplayedRange);
+				if (!MainWindow_SendUPDCACHEToView(pSelf)) {
+					return 7;
+				}
+				pSelf->modelData->curFile = hNewFile;
+				return 0;
+			} else {
+				HeapFree(GetProcessHeap(), 0, pSelf->modelData->soundData);
+				pSelf->modelData = NULL;
+				return 6;
+			}
+		} else {
+			return 7;
+		}
+	} else {
+		return 5;
+	}
+}
 
 HANDLE openFile(wchar_t *fileName)
 {
@@ -20,14 +186,14 @@ HANDLE openFile(wchar_t *fileName)
 	return hFile;
 }
 
-wchar_t *MainWindow_OpenFileExecute(PMAINWINDATA pSelf)
+wchar_t *openFileExecute(HANDLE parentWindow)
 {
 	OPENFILENAME ofn = {0};
 
 	static wchar_t fileName[MAX_PATH];
 
 	ofn.lStructSize = sizeof(OPENFILENAME);
-	ofn.hwndOwner = pSelf->winHandle;
+	ofn.hwndOwner = parentWindow;
 	ofn.lpstrFilter = L"Аудиофайлы windows waveform\0*.wav\0";
 	ofn.lpstrFile = fileName;
 	ofn.nMaxFile = MAX_PATH;
@@ -43,13 +209,12 @@ wchar_t *MainWindow_OpenFileExecute(PMAINWINDATA pSelf)
 
 void MainWindow_ChangeCurFile(PMAINWINDATA pSelf)
 {
-	wchar_t *chosenFile = MainWindow_OpenFileExecute(pSelf);
+	wchar_t *chosenFile = openFileExecute(pSelf->winHandle);
 	if (chosenFile) {
 		HANDLE hFile;
 		if ((hFile = openFile(chosenFile)) != INVALID_HANDLE_VALUE)
 		{
-			// TODO: continue to detach the child window from model
-			switch (SendMessage(pSelf->drawingAreaHandle, DM_SETINPUTFILE, (WPARAM)hFile, 0)) {
+			switch (MainWindow_FileChange(pSelf, hFile)) {
 				case 0:
 					SetWindowText(pSelf->winHandle, chosenFile);
 					break;
@@ -88,14 +253,14 @@ void MainWindow_ChangeCurFile(PMAINWINDATA pSelf)
 	}
 }
 
-wchar_t *MainWindow_SaveFileAsExecute(PMAINWINDATA pSelf)
+wchar_t *saveFileAsExecute(HANDLE parentWindow)
 {
 	OPENFILENAME sfn = {0};
 
 	static wchar_t savedFileName[MAX_PATH];
 
 	sfn.lStructSize = sizeof(OPENFILENAME);
-	sfn.hwndOwner = pSelf->winHandle;
+	sfn.hwndOwner = parentWindow;
 	sfn.lpstrFilter = L"Аудиофайлы windows waveform\0*.wav\0";
 	sfn.lpstrFile = savedFileName;
 	sfn.nMaxFile = MAX_PATH;
@@ -118,23 +283,21 @@ HANDLE saveFile(wchar_t *fileName)
 void MainWindow_SaveFileAs(PMAINWINDATA pSelf, BOOL saveSelected)
 {
 	LRESULT res;
-	wchar_t *chosenFile = MainWindow_SaveFileAsExecute(pSelf);
+	wchar_t *chosenFile = saveFileAsExecute(pSelf->winHandle);
 	if (chosenFile) {
 		HANDLE hFile;
 		if ((hFile = saveFile(chosenFile)) != INVALID_HANDLE_VALUE) {
-			if (saveSelected) {
-				res = SendMessage(pSelf->drawingAreaHandle, ADM_SAVESELECTED, (WPARAM)hFile, 0);
-			} else {
-				res = SendMessage(pSelf->drawingAreaHandle, DM_SAVEFILEAS, (WPARAM)hFile, 0);
-			}
+			res = MainWindow_SaveFile(pSelf, hFile, saveSelected);
 			switch (res) {
 				case 0:
 					//all good
 					if (saveSelected) {
+						// close the saved piece and forget about it
 						CloseHandle(hFile);
 					} else {
+						// read the newly-saved file as a new one. TODO: consider changing this
 						SetFilePointer(hFile, 0, NULL, FILE_BEGIN);
-						if (SendMessage(pSelf->drawingAreaHandle, DM_SETINPUTFILE, (WPARAM)hFile, 0) != 0) { // saved file reading error
+						if (MainWindow_FileChange(pSelf, hFile) != 0) { // saved file reading error
 							MessageBox(pSelf->winHandle, L"Что-то пошло не так... Пожалуйста, перезапустите программу.\nВаша работа была сохранена", L"Ошибка", MB_ICONERROR);
 							CloseHandle(hFile);
 						} else {
@@ -157,13 +320,13 @@ void MainWindow_SaveFileAs(PMAINWINDATA pSelf, BOOL saveSelected)
 	}
 }
 
-void MainWindow_SendUPDCACHEToView(PMAINWINDATA pSelf)
+BOOL MainWindow_SendUPDCACHEToView(PMAINWINDATA pSelf)
 {
-	updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
-	updInfo->soundData = pMainSelf->modelData->soundData;
-	updInfo->dataSize = pMainSelf->modelData->dataSize;
-	updInfo->wfxFormat = &(pMainSelf->modelData->wfxFormat);
-	SendMessage(pMainSelf->drawingAreaHandle, UPD_CACHE, 0, updInfo);
+	PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
+	updInfo->soundData = pSelf->modelData->soundData;
+	updInfo->dataSize = pSelf->modelData->dataSize;
+	updInfo->wfxFormat = &(pSelf->modelData->wfxFormat);
+	return SendMessage(pSelf->drawingAreaHandle, UPD_CACHE, 0, (LPARAM)updInfo);
 }
 
 LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -173,8 +336,6 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	PMAINWINDATA pMainSelf;
 	RECT newSize;
 	LPMINMAXINFO lpMMI;
-
-	PUPDATEINFO updInfo;
 
 	const float DRAWINGWINPOSYSCALE = 0.1;
 
@@ -191,9 +352,9 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		pMainSelf->modelData->playerState = stopped;
 		
 		drawingAreaHandle = CreateWindowEx(0, L"DrawingArea", NULL, WS_CHILD | WS_VISIBLE,
-			0, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), hWnd, 0, 0, NULL);
+			0, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, (int)truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), hWnd, 0, 0, NULL);
 		toolsPanelHandle = CreateWindowEx(0, L"ToolsPanel", NULL, WS_CHILD | WS_VISIBLE,
-			0, 0, newSize.right, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), hWnd, 0, 0, NULL);
+			0, 0, newSize.right, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), hWnd, 0, 0, NULL);
 	
 		if (!drawingAreaHandle || !toolsPanelHandle) {
 			return -1; // couldn't create drawing area; CreateWindowEx of main window will return NULL handle
@@ -213,17 +374,20 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	switch (uMsg) {
 		case WM_COMMAND:
 			switch (LOWORD(wParam)) {
-				case IDM_OPENFILE:
+				case AMM_OPENFILE:
+					// setup: filling WAVEFORMATEX, buffers and other values
 					MainWindow_ChangeCurFile(pMainSelf);
 					return 0;
-				case IDM_SAVEFILEAS:
-					MainWindow_SaveFileAs(pMainSelf, FALSE);
+				case AMM_SAVEFILEAS:
+					if (pMainSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+						MainWindow_SaveFileAs(pMainSelf, FALSE);
+					}
 					return 0;
-				case IDM_COPY:
+				case AMM_COPY:
 					// structure assignment is OK, just a memory copy
-					pMainSelf->modelData->rgCopyRange = pSelf->modelData->rgSelectedRange;
+					pMainSelf->modelData->rgCopyRange = pMainSelf->modelData->rgSelectedRange;
 					break;
-				case IDM_DELETE:
+				case AMM_DELETE:
 					if (pMainSelf->modelData->rgSelectedRange.nFirstSample != pMainSelf->modelData->rgSelectedRange.nLastSample) {
 						deletePiece(pMainSelf->modelData);
 						pMainSelf->modelData->rgSelectedRange.nFirstSample = pMainSelf->modelData->rgSelectedRange.nLastSample = 0;
@@ -235,62 +399,66 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 					}
 					pMainSelf->modelData->isChanged = TRUE;
 					break;
-				case IDM_PASTE:
+				case AMM_PASTE:
 					if (pMainSelf->modelData->rgCopyRange.nFirstSample != pMainSelf->modelData->rgCopyRange.nLastSample) {
 						pastePiece(pMainSelf->modelData);
 						pMainSelf->modelData->rgSelectedRange.nLastSample = pMainSelf->modelData->rgSelectedRange.nFirstSample = 0;
+						// soundworker in pastePiece moves the copied range if needed so it will be valid, no need to zero it
+						// TODO: consider to make it more explicit
 
 						MainWindow_SendUPDCACHEToView(pMainSelf);
 						SendMessage(pMainSelf->drawingAreaHandle, UPD_CURSOR, 0, 0);
 					}
 					pMainSelf->modelData->isChanged = TRUE;
 					break;
-				case IDM_MAKESILENT:
+				case AMM_MAKESILENT:
 					if (pMainSelf->modelData->rgSelectedRange.nFirstSample != pMainSelf->modelData->rgSelectedRange.nLastSample) {
 						makeSilent(pMainSelf->modelData);
-						pMainSelf->modelData->rgSelectedRange.nLastSample = pMainSelf->modelData->rgSelectedRange.nFirstSample = 0;
+						// zero the copy range just for safety
+						pMainSelf->modelData->rgCopyRange.nLastSample = pMainSelf->modelData->rgCopyRange.nFirstSample = 0;
 
 						MainWindow_SendUPDCACHEToView(pMainSelf);
-						SendMessage(pMainSelf->drawingAreaHandle, UPD_CURSOR, 0, 0);
 					}
 					pMainSelf->modelData->isChanged = TRUE;
 					break;
-				case IDM_SELECTALL:
-					if (pDrawSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+				case AMM_SELECTALL:
+					if (pMainSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
 						pMainSelf->modelData->rgSelectedRange.nFirstSample = 1;
 						pMainSelf->modelData->rgSelectedRange.nLastSample = pMainSelf->modelData->dataSize / pMainSelf->modelData->wfxFormat.nBlockAlign;
 						
-						SendMessage(pMainSelf->drawingAreaHandle, UPD_SELECTALL, 0, 0);
+						SendMessage(pMainSelf->drawingAreaHandle, UPD_SELECTION, TRUE, 0);
 					}
 					break;
-				case IDM_SAVESELECTED:
+				case AMM_SAVESELECTED:
 					// TODO: sort this
 					MainWindow_SaveFileAs(pMainSelf, TRUE);
 					break;
-				case IDM_REVERSESELECTED:
+				case AMM_REVERSESELECTED:
 					if (pMainSelf->modelData->rgSelectedRange.nFirstSample != pMainSelf->modelData->rgSelectedRange.nLastSample) {
 						reversePiece(pMainSelf->modelData);
 						
 						MainWindow_SendUPDCACHEToView(pMainSelf);
 					}
-					pDrawSelf->modelData->isChanged = TRUE;
+					pMainSelf->modelData->isChanged = TRUE;
 					break;
-				case IDM_ABOUT:
+				case AMM_ABOUT:
 					MessageBox(pMainSelf->winHandle, L"Аудиоредактор WAVE-файлов.\nЕремеев Г. С., гр. 751002. БГУИР, ФКСиС, кафедра ПОИТ, 2019 г.", L"О программе", MB_ICONINFORMATION);
 					break;
 			}
 			return 0;
 		case UPD_SELECTEDRANGE:
-			if (!wParam) {
-				// only left click has occured, nothing has been selected yet
-				pMainSelf->modelData.rgSelectedRange.nFirstSample = ((PRANGE)lParam)->nFirstSample;
-			} else {
-				// right click occured, we have a selected range
-				pMainSelf->modelData.rgSelectedRange.nLastSample = ((PRANGE)lParam)->nLastSample;
-				if (pMainSelf->modelData->rgSelectedRange.nLastSample < pMainSelf->modelData->rgSelectedRange.nFirstSample) {
-					unsigned long tmp = pMainSelf->modelData->rgSelectedRange.nFirstSample;
-					pMainSelf->modelData->rgSelectedRange.nFirstSample = pMainSelf->modelData->rgSelectedRange.nLastSample;
-					pMainSelf->modelData->rgSelectedRange.nLastSample = tmp;
+			if (pMainSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+				if (!wParam) {
+					// only left click has occured, nothing has been selected yet
+					pMainSelf->modelData->rgSelectedRange.nFirstSample = pMainSelf->modelData->rgSelectedRange.nLastSample = ((PRANGE)lParam)->nFirstSample;
+				} else {
+					// right click occured, we have a selected range
+					pMainSelf->modelData->rgSelectedRange.nLastSample = ((PRANGE)lParam)->nLastSample;
+					if (pMainSelf->modelData->rgSelectedRange.nLastSample < pMainSelf->modelData->rgSelectedRange.nFirstSample) {
+						unsigned long tmp = pMainSelf->modelData->rgSelectedRange.nFirstSample;
+						pMainSelf->modelData->rgSelectedRange.nFirstSample = pMainSelf->modelData->rgSelectedRange.nLastSample;
+						pMainSelf->modelData->rgSelectedRange.nLastSample = tmp;
+					}
 				}
 			}
 			HeapFree(GetProcessHeap(), 0, (PRANGE)lParam);
@@ -303,9 +471,9 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		case WM_SIZE:
 			if (wParam != SIZE_MINIMIZED) {
 				GetClientRect(pMainSelf->winHandle, &newSize);
-				MoveWindow(pMainSelf->drawingAreaHandle, 0, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, 
-					truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), FALSE);
-				MoveWindow(pMainSelf->toolsWinHandle, 0, 0, newSize.right, truncf(newSize.bottom * DRAWINGWINPOSYSCALE), TRUE);
+				MoveWindow(pMainSelf->drawingAreaHandle, 0, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, 
+					(int)truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), FALSE);
+				MoveWindow(pMainSelf->toolsWinHandle, 0, 0, newSize.right, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), TRUE);
 
 				MainWindow_SendUPDCACHEToView(pMainSelf);
 			}

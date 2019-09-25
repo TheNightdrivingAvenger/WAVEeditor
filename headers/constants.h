@@ -20,8 +20,9 @@
 
 // UPD -- update message
 #define UPD_CURSOR			(WM_USER + 10)	// lParam contains X position of the cursor. Selection is discarded
-#define UPD_SELECTION		(WM_USER + 11)	// lParam contains Xbegin, Xend with selection coordinates (as in lParam of WM_LBUTTONDOWN)
-#define UPD_SELECTALL		(WM_USER + 12)	// tells the child window to select all the file
-#define UPD_CACHE			(WM_USER + 13)	// lParam contains pointer to the update structure. Called code frees the memory
-#define UPD_SELECTEDRANGE	(WM_USER + 14)	// wParam contains a BOOL flag: FALSE -- first sample chosen, TRUE -- last sample chosen;
+#define UPD_SELECTION		(WM_USER + 11)	// wParam contains a BOOL flag: FALSE -- use values from lParam, TRUE -- select all the file, ignore lParam
+											//lParam contains Xbegin, Xend with selection coordinates (as X, Y in lParam of WM_LBUTTONDOWN)
+#define UPD_CACHE			(WM_USER + 12)	// lParam contains pointer to the update structure. Called code frees the memory
+#define UPD_SELECTEDRANGE	(WM_USER + 13)	// wParam contains a BOOL flag: FALSE -- first sample chosen, TRUE -- last sample chosen;
 											//lParam contains pointer to the RANGE struct with samples. Called code frees the memory
+#define UPD_DISPLAYEDRANGE	(WM_USER + 14)	// lParam contains pointer to the RANGE struct with displayed range. Called code frees the memory

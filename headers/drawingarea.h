@@ -14,6 +14,7 @@ typedef struct tagDRAWINGWINDATA {
 	void *minMaxChunksCache;	// stores in int; [ [min][max]1st channel ... [min][max]nth channel ][ [min][max]1st channel ... [min][max]nth channel ]
 	unsigned long cacheLength;	// length of the cache. min-max pairs (for every channel) = 1 length unit
 	int samplesInBlock;			// number of samples used to calculate one cache block for one channel
+	WAVEFORMATEX soundMetadata;
 	RANGE rgCurDisplayedRange;
 	RECT rcClientSize;
 	RECT rcSelectedRange;
