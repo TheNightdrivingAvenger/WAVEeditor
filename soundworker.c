@@ -14,10 +14,9 @@
 // TODO: silence is not always 0, fix for different formats
 void makeSilent(PMODELDATA pModelData)
 {
-	unsigned long bufferStart = (pModelData->rgSelectedRange.nFirstSample - 1) * pModelData->wfxFormat.nBlockAlign;
+	unsigned long bufferStart = (pModelData->rgSelectedRange.nFirstSample) * pModelData->wfxFormat.nBlockAlign;
 	ZeroMemory((char *)pModelData->soundData + bufferStart, 
 		(pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * pModelData->wfxFormat.nBlockAlign);
-
 }
 
 void pastePiece(PMODELDATA pModelData)
@@ -49,12 +48,14 @@ void pastePiece(PMODELDATA pModelData)
 
 void deletePiece(PMODELDATA pModelData)
 {
-	unsigned long cutBlockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * pModelData->wfxFormat.nBlockAlign;
+	DWORD cutBlockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * 
+																											pModelData->wfxFormat.nBlockAlign;
+	DWORD pastePos = min(0, (pModelData->rgSelectedRange.nFirstSample - 1) * pModelData->wfxFormat.nBlockAlign);
 
-	unsigned long pastePos = (pModelData->rgSelectedRange.nFirstSample - 1) * pModelData->wfxFormat.nBlockAlign;
-
+	// address of the piece that needs to get moved for shrinking
 	char *movingPiece = (char *)pModelData->soundData + pastePos + cutBlockSize;
-		
+
+	// TODO: consider carefully if they could overlap for any values and use memmove if they are
 	memcpy((char *)pModelData->soundData + pastePos, movingPiece, pModelData->dataSize - pastePos - cutBlockSize);
 	pModelData->soundData = HeapReAlloc(GetProcessHeap(), 0, pModelData->soundData, pModelData->dataSize - cutBlockSize);
 
@@ -65,7 +66,8 @@ void reversePiece(PMODELDATA pModelData)
 {
 	unsigned long blockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * pModelData->wfxFormat.nBlockAlign;
 	
-	unsigned long bufferStart = (pModelData->rgSelectedRange.nFirstSample - 1) * pModelData->wfxFormat.nBlockAlign;
+	// TODO: watch out for possible overlapping (as above in delete)
+	unsigned long bufferStart = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
 
 	char *curPiece = (char *)pModelData->soundData + bufferStart;
 

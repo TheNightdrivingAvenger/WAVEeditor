@@ -34,10 +34,10 @@ unsigned long DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoor
 	if (pSelf->minMaxChunksCache != NULL) {
 		if (pSelf->samplesInBlock == 1) {
 			return min(pSelf->rgCurDisplayedRange.nLastSample, pSelf->rgCurDisplayedRange.nFirstSample
-				+ (int)roundf(LOWORD(clickCoords) / (float)pSelf->stepX));
+				+ (int)roundf(GET_X_LPARAM(clickCoords) / (float)pSelf->stepX));
 		} else {
 			return min(pSelf->rgCurDisplayedRange.nLastSample, pSelf->rgCurDisplayedRange.nFirstSample 
-				+ pSelf->samplesInBlock * LOWORD(clickCoords));
+				+ pSelf->samplesInBlock * GET_X_LPARAM(clickCoords));
 		}
 	}
 	return 0;

@@ -160,7 +160,8 @@ int MainWindow_FileChange(PMAINWINDATA pSelf, HANDLE hNewFile)
 			if (ReadFile(hNewFile, pSelf->modelData->soundData, curChunk.chunkSize, &readres, NULL)) {
 				PRANGE newDisplayedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
 				newDisplayedRange->nFirstSample = 0;
-				newDisplayedRange->nLastSample = pSelf->modelData->dataSize / pSelf->modelData->wfxFormat.nBlockAlign; //same range for every channel
+				// From sample №0 to sample №MAX-1 (last one)
+				newDisplayedRange->nLastSample = pSelf->modelData->dataSize / (pSelf->modelData->wfxFormat.nBlockAlign) - 1; //same range for every channel
 				SendMessage(pSelf->drawingAreaHandle, UPD_DISPLAYEDRANGE, 0, (LPARAM)newDisplayedRange);
 				if (!MainWindow_SendUPDCACHEToView(pSelf)) {
 					return 7;
