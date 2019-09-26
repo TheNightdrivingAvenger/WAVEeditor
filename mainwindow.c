@@ -1,8 +1,3 @@
-/*ГЛАВНОЕ ОКНО. ПОСЫЛАЕТ ДОЧЕРНЕМУ СООБЩЕНИЯ О ДЕЙСТВИЯХ (смена файла, смена размера)
-* НЕПОСРЕДСТВЕННО ОТКРЫВАЕТ ФАЙЛЫ И ПЕРЕДАЁТ ДОЧЕРНЕМУ ОКНУ ИНФОРМАЦИЮ О НИХ;
-* ПЕРЕДАЁТ ДОЧЕРНЕМУ ОКНУ ИНФОРМАЦИЮ О ФАЙЛЕ, В КОТОРЫЙ НЕОБХОДИМО СОХРАНИТЬ
-*/
-
 #define UNICODE
 #define _UNICODE
 #include <Windows.h>
@@ -24,8 +19,8 @@ BOOL MainWindow_SendUPDCACHEToView(PMAINWINDATA pSelf);
 // non-zero LRESULT -- GetLastError() value
 LRESULT MainWindow_SaveFile(PMAINWINDATA pSelf, HANDLE hFile, BOOL saveSelected)
 {
-	if ((pSelf->modelData->curFile == INVALID_HANDLE_VALUE) || (pSelf->modelData->dataSize == 0)
-		|| (pSelf->modelData->rgSelectedRange.nFirstSample == pSelf->modelData->rgSelectedRange.nLastSample)) return -2;
+	if ((pSelf->modelData->dataSize == 0)
+		|| ((saveSelected) && (pSelf->modelData->rgSelectedRange.nFirstSample == pSelf->modelData->rgSelectedRange.nLastSample))) return -2;
 
 	DWORD writeRes;
 	struct writingDataStart {
@@ -102,11 +97,14 @@ BOOL checkFormat(PWAVEFORMATEX pWfx)
 int MainWindow_FileChange(PMAINWINDATA pSelf, HANDLE hNewFile)
 {
 	//working with the file: reading chunks and setting structure's fields
+
+	// closing the opened file (if there is)
 	if (pSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
 		CloseHandle(pSelf->modelData->curFile);
 		pSelf->modelData->curFile = INVALID_HANDLE_VALUE;
 	}
 
+	// freeing the memory
 	if (pSelf->modelData->soundData != NULL) {
 		HeapFree(GetProcessHeap(), 0, pSelf->modelData->soundData);
 		ZeroMemory(&pSelf->modelData->wfxFormat, sizeof(pSelf->modelData->wfxFormat));
@@ -163,10 +161,21 @@ int MainWindow_FileChange(PMAINWINDATA pSelf, HANDLE hNewFile)
 				// From sample №0 to sample №MAX-1 (last one)
 				newDisplayedRange->nLastSample = pSelf->modelData->dataSize / (pSelf->modelData->wfxFormat.nBlockAlign) - 1; //same range for every channel
 				SendMessage(pSelf->drawingAreaHandle, UPD_DISPLAYEDRANGE, 0, (LPARAM)newDisplayedRange);
+				// dispose the old player
+				if (pSelf->player != NULL) {
+					//if (Player_Dispose(pSelf->player) != MMSYSERR_NOERROR) {
+						//MessageBox(NULL, L"Disposing failed", L"", MB_OK);
+					//}
+					Player_Dispose(pSelf->player);
+					HeapFree(GetProcessHeap(), 0, pSelf->player);
+					pSelf->player = NULL;
+				}
 				if (!MainWindow_SendUPDCACHEToView(pSelf)) {
 					return 7;
 				}
 				pSelf->modelData->curFile = hNewFile;
+				// create a new player
+				pSelf->player = Player_Init(&pSelf->modelData->wfxFormat, pSelf->winHandle);
 				return 0;
 			} else {
 				HeapFree(GetProcessHeap(), 0, pSelf->modelData->soundData);
@@ -378,6 +387,13 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 				case AMM_OPENFILE:
 					// setup: filling WAVEFORMATEX, buffers and other values
 					MainWindow_ChangeCurFile(pMainSelf);
+					// zeroing copied and selected ranges
+					ZeroMemory(&pMainSelf->modelData->rgCopyRange, sizeof(RANGE));
+					ZeroMemory(&pMainSelf->modelData->rgSelectedRange, sizeof(RANGE));
+					// initializing with default values
+					pMainSelf->modelData->isChanged = FALSE;
+					pMainSelf->modelData->playerState = stopped;
+					PostMessage(pMainSelf->drawingAreaHandle, UPD_CURSOR, 0, 0);
 					return 0;
 				case AMM_SAVEFILEAS:
 					if (pMainSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
@@ -464,6 +480,29 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			}
 			HeapFree(GetProcessHeap(), 0, (PRANGE)lParam);
 			return 0;
+		case UPD_PLAYERSTATUS:
+			if (pMainSelf->modelData->curFile != INVALID_HANDLE_VALUE) {
+				switch ((PlayerState)wParam) {
+					case playing:
+						pMainSelf->modelData->playerState = playing;
+						if (Player_Play(pMainSelf->player, pMainSelf->modelData->soundData, pMainSelf->modelData->dataSize)) {
+							MessageBox(pMainSelf->winHandle, L"При попытке воспроизведения произошла ошибка", L"Ошибка", MB_ICONERROR);
+						}
+						break;
+					case paused:
+						// implement pause (don't forget to not reset the device)
+						break;
+					case stopped:
+						// implement stop (don't forget to reset the device)
+						break;
+				}
+			}
+			return 0;
+		// MULTIMEDIA CONTROL //
+		case WOM_DONE:
+			Player_CleanUpAfterPlaying(pMainSelf->player);
+			return 0;
+		// *** //
 		case WM_GETMINMAXINFO:
 			lpMMI = (LPMINMAXINFO)lParam;
     		lpMMI->ptMinTrackSize.x = 600;

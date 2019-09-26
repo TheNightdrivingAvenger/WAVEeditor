@@ -7,6 +7,7 @@ void ToolsPanel_RegisterClass(HINSTANCE hInstance, const wchar_t *className);
 #include "headers\list.h"
 
 typedef struct tagTOOLSWINDATA {
+	HWND parentWindow;
 	HWND winHandle;
 	HDC hdc;
 	HDC backDC;

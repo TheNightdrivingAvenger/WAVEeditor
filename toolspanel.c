@@ -7,9 +7,9 @@
 #include "headers\toolspanel.h"
 #include "headers\buttoninfo.h"
 #include "headers\buttons.h"
-#include "headers\player.h"
 #include "headers\constants.h"
 #include "headers\list.h"
+#include "headers\modeldata.h"
 
 inline POINT mouseCoordsToPoint(LPARAM lParam)
 {
@@ -86,18 +86,19 @@ BOOL ToolsPanel_CreateBackBuffer(PTOOLSWINDATA pSelf)
 	return FALSE;
 }
 
-int ToolsPanel_Stop_OnClick(void)
+int ToolsPanel_Stop_OnClick(PTOOLSWINDATA pSelf)
 {
 	return 0;
 }
 
-int ToolsPanel_Pause_OnClick(void)
+int ToolsPanel_Pause_OnClick(PTOOLSWINDATA pSelf)
 {
 	return 0;
 }
 
-int ToolsPanel_Play_OnClick(void)
+int ToolsPanel_Play_OnClick(PTOOLSWINDATA pSelf)
 {
+	PostMessage(pSelf->parentWindow, UPD_PLAYERSTATUS, playing, 0);
 	return 0;
 }
 
@@ -111,6 +112,7 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	if (uMsg == WM_CREATE) {
 		pToolsSelf = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TOOLSWINDATA));
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pToolsSelf);
+		pToolsSelf->parentWindow = ((LPCREATESTRUCT)lParam)->hwndParent;
 		pToolsSelf->winHandle = hWnd;
 		pToolsSelf->totalButtonsCount = 3;
 
@@ -167,7 +169,7 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			clickCoords = mouseCoordsToPoint(lParam);
 			if ((buttonNode = List_FindBtnByCoords(pToolsSelf->buttonsContainer, clickCoords)) != NULL) {
 				buttonNode->pButton->Button_OnClick(); // tell button to repaint or something
-				buttonNode->handler(); // perform according to the button action
+				buttonNode->handler(pToolsSelf); // perform according to the button action
 			}
 			return 0;
 		case WM_PAINT:

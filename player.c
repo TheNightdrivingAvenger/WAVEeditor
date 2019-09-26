@@ -8,14 +8,19 @@
 
 void CALLBACK waveCallback(HWAVEOUT hWaveDevice, UINT uMsg, DWORD_PTR dwInstance, DWORD_PTR dwParam1, DWORD_PTR dwParam2)
 {
-	PostMessage((HWND)dwInstance, uMsg, dwParam1, dwParam2);
+	if (uMsg == WOM_DONE) {
+		((PPLAYERDATA)dwInstance)->playerState = stopped;
+	}
+	PostMessage(((PPLAYERDATA)dwInstance)->callbackWindow, uMsg, dwParam1, dwParam2);
 }
 
-PPLAYERDATA Player_Init(PMODELDATA pModel, HWND callbackWindow)
+PPLAYERDATA Player_Init(PWAVEFORMATEX wfxFormat, HWND callbackWindow)
 {
 	PPLAYERDATA result = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(PLAYERDATA));
+	result->playerState = stopped;
+	result->callbackWindow = callbackWindow;
 
-	MMRESULT res = waveOutOpen(&result->deviceHandle, WAVE_MAPPER, &pModel->wfxFormat, (DWORD_PTR)waveCallback, (DWORD_PTR)callbackWindow, CALLBACK_FUNCTION);
+	MMRESULT res = waveOutOpen(&result->deviceHandle, WAVE_MAPPER, wfxFormat, (DWORD_PTR)waveCallback, (DWORD_PTR)result, CALLBACK_FUNCTION);
 	if (res == MMSYSERR_NOERROR)
 	{
 		//device was opened successfully
@@ -28,19 +33,17 @@ PPLAYERDATA Player_Init(PMODELDATA pModel, HWND callbackWindow)
 
 int Player_Play(PPLAYERDATA pSelf, void *soundData, int dataSize)
 {
-	HWAVEOUT deviceHandle;
-	MMRESULT res;
-
 	ZeroMemory(&pSelf->lastUsedHeader, sizeof(WAVEHDR));
 	pSelf->lastUsedHeader.lpData = soundData;
 	pSelf->lastUsedHeader.dwBufferLength = dataSize;
 
-	res = waveOutPrepareHeader(deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
+	MMRESULT res = waveOutPrepareHeader(pSelf->deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
 
 	if (res == MMSYSERR_NOERROR)
 	{
 		// header is prepared, can play
-		res = waveOutWrite(deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
+		pSelf->playerState = playing;
+		res = waveOutWrite(pSelf->deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
 	}
 	else
 	{
@@ -51,8 +54,29 @@ int Player_Play(PPLAYERDATA pSelf, void *soundData, int dataSize)
 	return 0;
 }
 
-void Player_CleanUpAfterPlaying(PPLAYERDATA pSelf)
+void Player_Pause(PPLAYERDATA pSelf)
+{
+	// TODO: implement pausing
+}
+
+void Player_Stop(PPLAYERDATA pSelf)
 {
 	waveOutReset(pSelf->deviceHandle);
+	Player_CleanUpAfterPlaying(pSelf);
+	pSelf->playerState = stopped;
+}
+
+void Player_CleanUpAfterPlaying(PPLAYERDATA pSelf)
+{
 	waveOutUnprepareHeader(pSelf->deviceHandle, &pSelf->lastUsedHeader, sizeof(WAVEHDR));
+}
+
+MMRESULT Player_Dispose(PPLAYERDATA pSelf)
+{
+	if (pSelf->playerState != stopped) {
+		waveOutReset(pSelf->deviceHandle);
+		Player_CleanUpAfterPlaying(pSelf);
+		pSelf->playerState = stopped;
+	}
+	return waveOutClose(pSelf->deviceHandle);
 }

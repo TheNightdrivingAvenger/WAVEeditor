@@ -74,7 +74,7 @@ void StopButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 // TODO: OnClick should just change the button's state (for example change the style)
 void PlayButton_OnClick(void)
 {
-	MessageBoxW(NULL, L"Play clicked", L"", MB_OK);
+	//MessageBoxW(NULL, L"Play clicked", L"", MB_OK);
 }
 
 void PauseButton_OnClick(void)
