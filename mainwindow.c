@@ -9,9 +9,15 @@
 #include "headers\drawingarea.h"
 #include "headers\modeldata.h"
 
+// in this method taking data from model itself is OK (just to not make single-line Model methods for getting data)
 void MainWindow_UpdateView(PMAINWINDATA pSelf, int reasons, PACTIONINFO aiLastAction)
 {
 	if (reasons & newFileOpened) {
+		if (pSelf->player != NULL) {
+			Player_Dispose(pSelf->player);
+		}
+		pSelf->player = Player_Init(&pSelf->modelData->wfxFormat, pSelf->winHandle);
+
 		PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
 		updInfo->soundData = pSelf->modelData->soundData;
 		updInfo->dataSize = pSelf->modelData->dataSize;
@@ -35,9 +41,28 @@ void MainWindow_UpdateView(PMAINWINDATA pSelf, int reasons, PACTIONINFO aiLastAc
 	}
 	if (reasons & selectionChange) {
 	}
-	// TODO: consider not resetting the cursor but moving it
+	// TODO: consider not resetting the cursor but moving it (in model)
 	if (reasons & cursorReset) {
 		DrawingArea_ResetCursor(pSelf->drawingArea);
+	}
+	if (reasons & playbackStop) {
+		MainWindow_PlaybackStop(pSelf);
+	}
+}
+
+// TODO: is it ok to directly take Model's data?
+// TODO: some has to protect the player from double-start
+void MainWindow_PlaybackStart(PMAINWINDATA pSelf)
+{
+	if (pSelf->player != NULL) {
+		Player_Play(pSelf->player, pSelf->modelData->soundData, pSelf->modelData->dataSize);
+	}
+}
+
+void MainWindow_PlaybackStop(PMAINWINDATA pSelf)
+{
+	if (pSelf->player != NULL) {
+		Player_Stop(pSelf->player);
 	}
 }
 
@@ -126,11 +151,6 @@ void MainWindow_AddToolsPanelViewPart(PMAINWINDATA pSelf, PTOOLSWINDATA pPanel)
 	pSelf->toolsPanel = pPanel;
 }
 
-void MainWindow_AddPlayerViewPart(PMAINWINDATA pSelf, PPLAYERDATA pPlayer)
-{
-	pSelf->player = pPlayer;
-}
-
 LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	HWND drawingAreaHandle;
@@ -214,7 +234,7 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 					break;
 			}
 			return 0;
-		// MULTIMEDIA CONTROL // TODO: move to model?
+		// MULTIMEDIA CONTROL
 		case WOM_DONE:
 			Player_CleanUpAfterPlaying(pMainSelf->player);
 			return 0;

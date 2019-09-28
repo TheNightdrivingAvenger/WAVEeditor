@@ -124,6 +124,7 @@ HANDLE openFile(const wchar_t *const fileName)
 
 void Model_ChangeCurFile(PMODELDATA pSelf, const wchar_t *const chosenFile)
 {
+	MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
 	HANDLE hFile;
 	if ((hFile = openFile(chosenFile)) != INVALID_HANDLE_VALUE) {
 		switch (Model_FileChange(pSelf, hFile)) {
@@ -237,6 +238,7 @@ HANDLE saveFile(wchar_t *fileName)
 
 void Model_SaveFileAs(PMODELDATA pSelf, BOOL saveSelected, wchar_t *const chosenFile)
 {
+	MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
 	LRESULT res;
 	HANDLE hFile;
 	if ((hFile = saveFile(chosenFile)) != INVALID_HANDLE_VALUE) {
@@ -284,6 +286,8 @@ void Model_CopySelected(PMODELDATA pSelf)
 void Model_DeletePiece(PMODELDATA pSelf)
 {
 	if (pSelf->rgSelectedRange.nFirstSample != pSelf->rgSelectedRange.nLastSample) {
+		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+
 		deletePiece(pSelf);
 
 		PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
@@ -304,6 +308,8 @@ void Model_DeletePiece(PMODELDATA pSelf)
 void Model_PastePiece(PMODELDATA pSelf)
 {
 	if (pSelf->rgCopyRange.nFirstSample != pSelf->rgCopyRange.nLastSample) {
+		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+
 		pastePiece(pSelf);
 
 		PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
@@ -325,6 +331,8 @@ void Model_PastePiece(PMODELDATA pSelf)
 void Model_MakeSilent(PMODELDATA pSelf)
 {
 	if (pSelf->rgSelectedRange.nFirstSample != pSelf->rgSelectedRange.nLastSample) {
+		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+
 		makeSilent(pSelf);
 		// zero the copy range just for safety
 		ZeroMemory(&pSelf->rgCopyRange, sizeof(SAMPLERANGE));
@@ -351,6 +359,8 @@ void Model_SelectAll(PMODELDATA pSelf)
 void Model_Reverse(PMODELDATA pSelf)
 {
 	if (pSelf->rgSelectedRange.nFirstSample != pSelf->rgSelectedRange.nLastSample) {
+		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+
 		reversePiece(pSelf);
 
 		PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
@@ -376,28 +386,6 @@ void Model_UpdateSelection(PMODELDATA pSelf, BOOL isRangeSelected, PSAMPLERANGE 
 				pSelf->rgSelectedRange.nFirstSample = pSelf->rgSelectedRange.nLastSample;
 				pSelf->rgSelectedRange.nLastSample = tmp;
 			}
-		}
-	}
-}
-
-// TODO: move to view
-void Model_UpdatePlayerStatus(PMODELDATA pSelf, PlayerState status)
-{
-	// something here
-	if (pSelf->curFile != INVALID_HANDLE_VALUE) {
-		switch (status) {
-		case playing:
-			//pSelf->playerState = playing;
-			//if (Player_Play(pSelf->player, pSelf->soundData, pSelf->dataSize)) {
-				//MainWindow_ShowModalError(pSelf->mainView, L"При попытке воспроизведения произошла ошибка", L"Ошибка", MB_ICONERROR);
-			//}
-			break;
-		case paused:
-			// implement pause (don't forget to not reset the device)
-			break;
-		case stopped:
-			// implement stop (don't forget to reset the device)
-			break;
 		}
 	}
 }

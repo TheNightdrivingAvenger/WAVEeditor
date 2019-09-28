@@ -89,6 +89,7 @@ BOOL ToolsPanel_CreateBackBuffer(PTOOLSWINDATA pSelf)
 
 int ToolsPanel_Stop_OnClick(PTOOLSWINDATA pSelf)
 {
+	MainWindow_PlaybackStop(pSelf->parentWindow);
 	return 0;
 }
 
@@ -99,7 +100,7 @@ int ToolsPanel_Pause_OnClick(PTOOLSWINDATA pSelf)
 
 int ToolsPanel_Play_OnClick(PTOOLSWINDATA pSelf)
 {
-	Model_UpdatePlayerStatus(pSelf->modelData, playing);
+	MainWindow_PlaybackStart(pSelf->parentWindow);
 	return 0;
 }
 
@@ -115,7 +116,8 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pToolsSelf);
 		pToolsSelf->winHandle = hWnd;
 		pToolsSelf->modelData = ((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->model;
-		MainWindow_AttachToolsPanel(((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->parent, pToolsSelf);
+		pToolsSelf->parentWindow = ((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->parent;
+		MainWindow_AttachToolsPanel(pToolsSelf->parentWindow, pToolsSelf);
 
 		pToolsSelf->totalButtonsCount = 3;
 

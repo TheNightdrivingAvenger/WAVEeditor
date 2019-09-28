@@ -4,9 +4,11 @@
 #include "headers\list.h"
 
 struct tagMODELDATA;
+struct tagMAINWINDOWDATA;
 
 typedef struct tagTOOLSWINDATA {
 	HWND winHandle;
+	struct tagMAINWINDOWDATA *parentWindow;
 	struct tagMODELDATA *modelData;
 	HDC hdc;
 	HDC backDC;

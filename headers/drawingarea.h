@@ -1,7 +1,7 @@
 #pragma once
 #include "headers\modeldata.h"
 
-#define CURSOR_THICKNESS 2
+#define CURSOR_THICKNESS 1
 #define SCREEN_DELTA_RIGHT 15	// how many pixels exclue on the right side from space for drawing
 
 typedef LONG XCoord;

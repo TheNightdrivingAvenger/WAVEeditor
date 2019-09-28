@@ -79,10 +79,10 @@ void PlayButton_OnClick(void)
 
 void PauseButton_OnClick(void)
 {
-	MessageBoxW(NULL, L"Pause clicked", L"", MB_OK);
+	//MessageBoxW(NULL, L"Pause clicked", L"", MB_OK);
 }
 
 void StopButton_OnClick(void)
 {
-	MessageBoxW(NULL, L"Stop clicked", L"", MB_OK);
+	//MessageBoxW(NULL, L"Stop clicked", L"", MB_OK);
 }

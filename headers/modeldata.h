@@ -11,7 +11,7 @@ typedef struct tagSAMPLERANGE {
 // TODO: add "close file" in menu in here?
 enum changeReasonsFlags { soundDataChange = 2 /* requires ACTIONINFO structure*/, curFileNameChange = 4 /* change window text */,
 						cursorPosChange = 8, selectionChange = 16, cursorReset = 32,
-						newFileOpened = 64 };
+						newFileOpened = 64, playbackStop = 128 };
 
 enum editActions { eaDelete, eaPaste, eaMakeSilent, eaReverse };
 typedef struct tagEDITACTION {

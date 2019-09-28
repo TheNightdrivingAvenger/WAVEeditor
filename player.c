@@ -61,9 +61,11 @@ void Player_Pause(PPLAYERDATA pSelf)
 
 void Player_Stop(PPLAYERDATA pSelf)
 {
-	waveOutReset(pSelf->deviceHandle);
-	Player_CleanUpAfterPlaying(pSelf);
-	pSelf->playerState = stopped;
+	if (pSelf->playerState != stopped) {
+		waveOutReset(pSelf->deviceHandle);
+		Player_CleanUpAfterPlaying(pSelf);
+		pSelf->playerState = stopped;
+	}
 }
 
 void Player_CleanUpAfterPlaying(PPLAYERDATA pSelf)
@@ -73,10 +75,6 @@ void Player_CleanUpAfterPlaying(PPLAYERDATA pSelf)
 
 MMRESULT Player_Dispose(PPLAYERDATA pSelf)
 {
-	if (pSelf->playerState != stopped) {
-		waveOutReset(pSelf->deviceHandle);
-		Player_CleanUpAfterPlaying(pSelf);
-		pSelf->playerState = stopped;
-	}
+	Player_Stop(pSelf);
 	return waveOutClose(pSelf->deviceHandle);
 }
