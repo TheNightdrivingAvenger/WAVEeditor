@@ -27,21 +27,22 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	switch (wfxFormat->wBitsPerSample)
 	{
 		case 8:
-			calcMinMax = calcMinMax8;
+			calcMinMax = &calcMinMax8;
 			minSampleVal = 0;
 			break;
 		case 16:
-			calcMinMax = calcMinMax16;
+			calcMinMax = &calcMinMax16;
 			minSampleVal = -32768;
 			break;
 		default:
 			return FALSE; //invalid data
 	}
 
+	// total displayed samples
 	unsigned long totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample;
 	if (totalSamples == 0) return FALSE;
 
-	float samplesToWidth = totalSamples / (float)windowProps->rcClientSize.right; 
+	float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT);
 
 	if (samplesToWidth >= 1) {
 		float intPart;
@@ -59,7 +60,9 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	if (windowProps->minMaxChunksCache != NULL) {
 		HeapFree(GetProcessHeap(), 0, windowProps->minMaxChunksCache);
 	}
-	totalSamples = wfxFormat->nChannels * (dataSize / wfxFormat->nBlockAlign); // samples in all channels
+	windowProps->lastSample = dataSize / wfxFormat->nBlockAlign - 1;
+	// samples in all channels
+	totalSamples = wfxFormat->nChannels * (windowProps->lastSample + 1);
 
 																	  // 2 -- min and max
 	if ((windowProps->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalSamples / windowProps->samplesInBlock) + 1))) == NULL) {
@@ -90,14 +93,13 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 
 	windowProps->stepX = 1;
 	if (windowProps->samplesInBlock == 1) {
-		windowProps->stepX = windowProps->rcClientSize.right / totalSamples;
+		windowProps->stepX = (windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT) / totalSamples;
 	}
 
 	int zeroChannelLvl = (windowProps->rcClientSize.bottom - 1) / wfxFormat->nChannels;
 
-	// TODO: what's with division here? Is it OK?
 	unsigned long cachePos = windowProps->rgCurDisplayedRange.nFirstSample / windowProps->samplesInBlock;
-	unsigned long bufferStart = cachePos * wfxFormat->nChannels * 2; //buffer offset
+	unsigned long bufferStart = cachePos * wfxFormat->nChannels * 2; //min max cache offset
 
 	int *cache = (int *)windowProps->minMaxChunksCache + bufferStart;
 
@@ -109,16 +111,17 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 		tempMins[i] = cache[i * 2] * zeroChannelLvl / soundDepth + zeroChannelLvl * (i + 1);// *2 because in memory it's [min][max][min][max]...
 	}
 
-	// 2 is a bad idea for marker, should be some constant
-	BOOL isMarker = ((windowProps->rcSelectedRange.right - windowProps->rcSelectedRange.left) <= 2); // did user just set the marker or selected a range?
+	// did user just set the marker or selected a range?
+	BOOL isMarker = ((windowProps->rcSelectedRange.right - windowProps->rcSelectedRange.left) <= CURSOR_THICKNESS);
 	if (!isMarker)
 	{
 		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);
 	}
 
 	SelectObject(windowProps->backDC, windowProps->curPen);
-	int curSample = windowProps->rgCurDisplayedRange.nFirstSample;
-	for (int xPos = 0; xPos < windowProps->rcClientSize.right 
+	//int curSample = windowProps->rgCurDisplayedRange.nFirstSample;
+	int xPos;
+	for (xPos = 0; xPos < (windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT)
 			&& cachePos < windowProps->cacheLength; xPos += windowProps->stepX) {
 		// drawing all channels in cycle
 		for (int j = 0; j < wfxFormat->nChannels; j++) {
@@ -130,9 +133,10 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 			tempMins[j] = normalizedMin;
 		}
 		cache += wfxFormat->nChannels * 2;
-		curSample += windowProps->samplesInBlock;
+		//curSample += windowProps->samplesInBlock;
 		cachePos++;
 	}
+	windowProps->lastUsedPixelX = xPos - 1;
 	if (isMarker) {
 		SelectObject(windowProps->backDC, windowProps->borderPen);
 		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);

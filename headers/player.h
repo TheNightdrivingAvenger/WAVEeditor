@@ -1,4 +1,6 @@
-#include "headers\modeldata.h"
+#pragma once
+
+typedef enum { playing, paused, stopped } PlayerState;
 
 typedef struct _tagPLAYERDATA {
 	HWAVEOUT deviceHandle;

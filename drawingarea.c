@@ -1,30 +1,64 @@
-/*ДОЧЕРНЕЕ ОКНО ДЛЯ РАБОТЫ СО ЗВУКОМ. 
-* ЧИТАЕТ ИЗ ФАЙЛА (ПРОВЕРЯЕТ КОРРЕКТНОСТЬ).
-* ПЕРЕСЧИТЫВАЕТ (вызывает процедуру из модуля soundworker.h для работы со звуком) ВСЕ ДИАПАЗОНЫ (видимый, выделенный).
-* РИСУЕТ (вызывает процедуры из модуля для рисования).
-* СОХРЯНЕТ ФАЙЛЫ.
-* ВЫЗЫВАЕТ ПРОЦЕДУРЫ ДЛЯ РАБОТЫ С ФАЙЛОМ (редактирование).
-*/
-
 #define UNICODE
 #define _UNICODE
-#include <Windows.h>
+#include <windows.h>
 #include <windowsx.h>
 #include <string.h>
 #include <math.h>
 #include "headers\drawingarea.h"
+#include "headers\mainwindow.h"
 #include "headers\constants.h"
 #include "headers\sounddrawer.h"
 
-BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
+BOOL DrawingArea_DrawNewFile(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 {
-	// TODO: updating the cache means there has been some changes in the sound data. But what I do here is just set view from the
-	// first to the last sample. Not good for planned image scaling
-	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / updateInfo->wfxFormat->nBlockAlign;
+	pSelf->zoomLvl = 1;
 	pSelf->soundMetadata = *(updateInfo->wfxFormat);
+	pSelf->rgCurDisplayedRange.nFirstSample = 0;
+	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
+	pSelf->lastSample = pSelf->rgCurDisplayedRange.nLastSample;
 	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
-
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
 	return res;
+}
+
+// TODO: may consider to jump not straight to the action place, but a bit before it
+BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACTIONINFO aiAction)
+{
+	pSelf->soundMetadata = *(updateInfo->wfxFormat);
+	pSelf->lastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
+
+	sampleIndex curDisplayedRangeLength = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample;
+	// range where action occured starts outside of visible region, so we display it
+	if ((aiAction->rgRange.nFirstSample < pSelf->rgCurDisplayedRange.nFirstSample)
+		|| (aiAction->rgRange.nFirstSample > pSelf->rgCurDisplayedRange.nLastSample)) {
+
+		pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
+	}
+	// choose minimum between total samples count and previous range width
+	pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->lastSample,
+		pSelf->rgCurDisplayedRange.nFirstSample + curDisplayedRangeLength);
+
+	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+	return res;
+}
+
+// probably will be not pos, but sample number, so calculactions and stuff
+void DrawingArea_UpdateCursor(PDRAWINGWINDATA pSelf, int pos)
+{
+	pSelf->rcSelectedRange.left = pos;
+	pSelf->rcSelectedRange.right = pos + CURSOR_THICKNESS;
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+}
+
+void DrawingArea_ResetCursor(PDRAWINGWINDATA pSelf)
+{
+	// TODO: not like this, if zoomed-in it will be in the left side of the screen, but needs to be off-screen (on the first sample)
+	if (pSelf->rgCurDisplayedRange.nFirstSample > 0) {
+	}
+	pSelf->rcSelectedRange.left = 0;
+	pSelf->rcSelectedRange.right = CURSOR_THICKNESS;
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
 }
 
 unsigned long DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoords)
@@ -63,6 +97,35 @@ void DrawingArea_DestroyBackBuffer(PDRAWINGWINDATA pSelf)
 	DeleteDC(pSelf->backDC);
 }
 
+void DrawingArea_RecalcCurDisplayedRange(PDRAWINGWINDATA pSelf)
+{
+	XCoord usedAreaSizeDelta = pSelf->lastUsedPixelX + SCREEN_DELTA_RIGHT - pSelf->rcClientSize.right;
+	BOOL shrinked = FALSE;
+	if (usedAreaSizeDelta > 0) {
+		shrinked = TRUE;
+	} else if (usedAreaSizeDelta < 0) {
+		usedAreaSizeDelta = -usedAreaSizeDelta;
+		shrinked = FALSE;
+	}
+	float blocksDelta = usedAreaSizeDelta / (float)pSelf->stepX;
+	float intPart;
+	sampleIndex blocksDeltaInt;
+	if (modff(blocksDelta, &intPart) > 0) {
+		blocksDeltaInt = (int)truncf(intPart + 1);
+	} else {
+		blocksDeltaInt = (int)roundf(intPart);
+	}
+
+	if (shrinked) {
+		pSelf->rgCurDisplayedRange.nLastSample -= blocksDeltaInt * pSelf->samplesInBlock;
+	} else {
+		if (pSelf->rgCurDisplayedRange.nLastSample < pSelf->lastSample) {
+			pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->lastSample,
+				pSelf->rgCurDisplayedRange.nLastSample + blocksDeltaInt * pSelf->samplesInBlock);
+		}
+	}
+}
+
 // if false, prev bitmap was not destroyed, but new wasn't created
 BOOL DrawingArea_UpdateBackBuffer(PDRAWINGWINDATA pSelf)
 {
@@ -95,13 +158,15 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 	PDRAWINGWINDATA pDrawSelf;
 	PAINTSTRUCT ps;
 
-	PRANGE rgNewSelectedRange;
+	PSAMPLERANGE rgNewSelectedRange;
 
 	if (uMsg == WM_CREATE) {
 		pDrawSelf = (PDRAWINGWINDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(DRAWINGWINDATA));
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pDrawSelf);
 		pDrawSelf->winHandle = hWnd;
-		pDrawSelf->parentWindow = ((LPCREATESTRUCT)lParam)->hwndParent;
+		pDrawSelf->modelData = ((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->model;
+		MainWindow_AttachDrawingArea(((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->parent, pDrawSelf);
+		pDrawSelf->zoomLvl = 1;
 
 		pDrawSelf->curPen = CreatePen(PS_SOLID, 1, RGB(255,128,0));
 		pDrawSelf->borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
@@ -112,7 +177,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		pDrawSelf->rcSelectedRange.top = pDrawSelf->rcClientSize.top;
 		pDrawSelf->rcSelectedRange.bottom = pDrawSelf->rcClientSize.bottom;
 		pDrawSelf->rcSelectedRange.left = 0;
-		pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
+		pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + CURSOR_THICKNESS;
 
 		DrawingArea_CreateBackBuffer(pDrawSelf); // ADD CHECKING!!!
 
@@ -124,49 +189,24 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 
 	switch (uMsg)
 	{
-		case UPD_CURSOR:
-			pDrawSelf->rcSelectedRange.left = lParam;
-			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
-			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			return 0;
-		case UPD_SELECTION:
-			if (wParam) {
-				pDrawSelf->rcSelectedRange.left = 0;
-				pDrawSelf->rcSelectedRange.right = pDrawSelf->rcClientSize.right - 1;
-			} else {
-				pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
-				pDrawSelf->rcSelectedRange.right = GET_Y_LPARAM(lParam);
-			}
-			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			return 0;
-		case UPD_CACHE:
-			// TRUE if everything updated OK, FALSE otherwise
-			res = DrawingArea_UpdateCache(pDrawSelf, (PUPDATEINFO)lParam);
-			HeapFree(GetProcessHeap(), 0, (PUPDATEINFO)lParam);
-			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
-			return res;
-		case UPD_DISPLAYEDRANGE:
-			pDrawSelf->rgCurDisplayedRange.nFirstSample = ((PRANGE)lParam)->nFirstSample;
-			pDrawSelf->rgCurDisplayedRange.nLastSample = ((PRANGE)lParam)->nLastSample;
-			HeapFree(GetProcessHeap(), 0, (PRANGE)lParam);
-			return 0;
 		case WM_LBUTTONDOWN:
-			// send message to main window and tell about the selection changes
-			// Send and not Post because model must be updated immediately
-			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
+			// send message to the model and tell about the selection changes
+			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(SAMPLERANGE));
 			rgNewSelectedRange->nFirstSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
 			rgNewSelectedRange->nLastSample = rgNewSelectedRange->nFirstSample;
-			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, FALSE, (LPARAM)rgNewSelectedRange);
+			Model_UpdateSelection(pDrawSelf->modelData, FALSE, rgNewSelectedRange);
+			HeapFree(GetProcessHeap(), 0, rgNewSelectedRange);
 
 			pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
-			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + 2;
+			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + CURSOR_THICKNESS;
 			
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
 			return 0;
 		case WM_RBUTTONDOWN:
-			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(RANGE));
+			rgNewSelectedRange = HeapAlloc(GetProcessHeap(), 0, sizeof(SAMPLERANGE));
 			rgNewSelectedRange->nLastSample = DrawingArea_CoordsToSample(pDrawSelf, lParam);
-			SendMessage(pDrawSelf->parentWindow, UPD_SELECTEDRANGE, TRUE, (LPARAM)rgNewSelectedRange);
+			Model_UpdateSelection(pDrawSelf->modelData, TRUE, rgNewSelectedRange);
+			HeapFree(GetProcessHeap(), 0, rgNewSelectedRange);
 
 			pDrawSelf->rcSelectedRange.right = GET_X_LPARAM(lParam);
 			if (pDrawSelf->rcSelectedRange.right < pDrawSelf->rcSelectedRange.left) {
@@ -186,6 +226,8 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			return TRUE;
 		case WM_SIZE:
 			GetClientRect(pDrawSelf->winHandle, &(pDrawSelf->rcClientSize));
+			if (pDrawSelf->lastSample != 0) DrawingArea_RecalcCurDisplayedRange(pDrawSelf);
+
 			DrawingArea_UpdateBackBuffer(pDrawSelf); // ADD CHECKING!!
 			pDrawSelf->rcSelectedRange.top = pDrawSelf->rcClientSize.top;
 			pDrawSelf->rcSelectedRange.bottom = pDrawSelf->rcClientSize.bottom;

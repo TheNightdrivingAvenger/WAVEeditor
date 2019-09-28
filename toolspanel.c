@@ -9,6 +9,7 @@
 #include "headers\buttons.h"
 #include "headers\constants.h"
 #include "headers\list.h"
+#include "headers\mainwindow.h"
 #include "headers\modeldata.h"
 
 inline POINT mouseCoordsToPoint(LPARAM lParam)
@@ -98,7 +99,7 @@ int ToolsPanel_Pause_OnClick(PTOOLSWINDATA pSelf)
 
 int ToolsPanel_Play_OnClick(PTOOLSWINDATA pSelf)
 {
-	PostMessage(pSelf->parentWindow, UPD_PLAYERSTATUS, playing, 0);
+	Model_UpdatePlayerStatus(pSelf->modelData, playing);
 	return 0;
 }
 
@@ -112,8 +113,10 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	if (uMsg == WM_CREATE) {
 		pToolsSelf = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(TOOLSWINDATA));
 		SetWindowLongPtr(hWnd, 0, (LONG_PTR)pToolsSelf);
-		pToolsSelf->parentWindow = ((LPCREATESTRUCT)lParam)->hwndParent;
 		pToolsSelf->winHandle = hWnd;
+		pToolsSelf->modelData = ((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->model;
+		MainWindow_AttachToolsPanel(((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->parent, pToolsSelf);
+
 		pToolsSelf->totalButtonsCount = 3;
 
 		pToolsSelf->bckgndBrush = CreateSolidBrush(RGB(55, 55, 55));

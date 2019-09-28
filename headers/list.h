@@ -1,7 +1,8 @@
 #pragma once
 #include "headers\buttoninfo.h"
 
-typedef int (*ClickHandler)(void *);
+struct tagTOOLSWINDATA;
+typedef int (*ClickHandler)(struct tagTOOLSWINDATA *pSelf);
 
 typedef struct tagLISTNODE {
 	PBUTTONINFO pButton;
