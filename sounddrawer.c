@@ -98,6 +98,7 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 
 	int zeroChannelLvl = (windowProps->rcClientSize.bottom - 1) / wfxFormat->nChannels;
 
+	// integer division -- truncation towards zero. We take the block in which the first sample is
 	unsigned long cachePos = windowProps->rgCurDisplayedRange.nFirstSample / windowProps->samplesInBlock;
 	unsigned long bufferStart = cachePos * wfxFormat->nChannels * 2; //min max cache offset
 
@@ -119,8 +120,8 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 	}
 
 	SelectObject(windowProps->backDC, windowProps->curPen);
-	//int curSample = windowProps->rgCurDisplayedRange.nFirstSample;
 	int xPos;
+	// drawing until we hit the end of the cache or window border
 	for (xPos = 0; xPos < (windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT)
 			&& cachePos < windowProps->cacheLength; xPos += windowProps->stepX) {
 		// drawing all channels in cycle
@@ -133,10 +134,9 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 			tempMins[j] = normalizedMin;
 		}
 		cache += wfxFormat->nChannels * 2;
-		//curSample += windowProps->samplesInBlock;
 		cachePos++;
 	}
-	windowProps->lastUsedPixelX = xPos - 1;
+	windowProps->lastUsedPixelX = xPos - windowProps->stepX;
 	if (isMarker) {
 		SelectObject(windowProps->backDC, windowProps->borderPen);
 		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);

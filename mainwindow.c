@@ -177,7 +177,7 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		PCREATEINFO createInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(CREATEINFO));
 		createInfo->model = pMainSelf->modelData;
 		createInfo->parent = pMainSelf;
-		drawingAreaHandle = CreateWindowEx(0, L"DrawingArea", NULL, WS_CHILD | WS_VISIBLE,
+		drawingAreaHandle = CreateWindowEx(0, L"DrawingArea", NULL, WS_CHILD | WS_VISIBLE | WS_HSCROLL,
 			0, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right,
 			(int)truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), hWnd, 0, 0, createInfo);
 
@@ -230,7 +230,7 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 					Model_Reverse(pMainSelf->modelData);
 					break;
 				case AMM_ABOUT:
-					MessageBox(pMainSelf->winHandle, L"Аудиоредактор WAVE-файлов.\nЕремеев Г. С., гр. 751002. БГУИР, ФКСиС, кафедра ПОИТ, 2019 г.", L"О программе", MB_ICONINFORMATION);
+					MessageBox(pMainSelf->winHandle, L"Аудиоредактор WAVE-файлов.", L"О программе", MB_ICONINFORMATION);
 					break;
 			}
 			return 0;
