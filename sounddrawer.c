@@ -1,13 +1,6 @@
-/*МОДУЛЬ ДЛЯ РИСОВАНИЯ ЗВУКА
-* СОЗДАЁТ БУФЕР, ОТКУДА ПРОЦЕДУРА РИСОВАНИЯ БЕРЁТ ЗНАЧЕНИЯ.
-* РИСУЕТ ПО ЗНАЧЕНИЯМ ИЗ БУФЕРА.
-* РИСУЕТ ВЫДЕЛЕНИЕ И ПОЛЗУНОК.
-*/
-
 #define UNICODE
 #define _UNICODE
 #include <Windows.h>
-#include <mmreg.h>
 #include <math.h>
 
 #include "headers\drawingarea.h"
@@ -136,6 +129,10 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 		cache += wfxFormat->nChannels * 2;
 		cachePos++;
 	}
+	// if somehow window was too narrow we need to sync last displayed sample number with the last one actually drawn
+	windowProps->rgCurDisplayedRange.nLastSample = min(windowProps->lastSample,
+		cachePos * windowProps->samplesInBlock + windowProps->samplesInBlock - 1);
+
 	windowProps->lastUsedPixelX = xPos - windowProps->stepX;
 	if (isMarker) {
 		SelectObject(windowProps->backDC, windowProps->borderPen);

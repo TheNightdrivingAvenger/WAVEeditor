@@ -133,18 +133,9 @@ void DrawingArea_RecalcCurDisplayedRange(PDRAWINGWINDATA pSelf)
 	if (shrinked) {
 		pSelf->rgCurDisplayedRange.nLastSample -= blocksDeltaInt * pSelf->samplesInBlock;
 	} else {
-		//if (pSelf->rgCurDisplayedRange.nLastSample < pSelf->lastSample) {
-			pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->lastSample,
-				pSelf->rgCurDisplayedRange.nLastSample + blocksDeltaInt * pSelf->samplesInBlock);
-		//}
+		pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->lastSample,
+			pSelf->rgCurDisplayedRange.nLastSample + blocksDeltaInt * pSelf->samplesInBlock);
 	}
-	//SCROLLINFO scrollInfo = (SCROLLINFO){ sizeof(SCROLLINFO), SIF_ALL | SIF_DISABLENOSCROLL,
-										//0, pSelf->cacheLength, 
-										//pSelf->rgCurDisplayedRange.nLastSample / pSelf->samplesInBlock -
-											//pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock,
-										//pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock, 0};
-	//// TODO: this triple-division is not good, consider saving another range (in blocks) ^^^
-	//SetScrollInfo(pSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
 }
 
 // if false, prev bitmap was not destroyed, but new wasn't created
