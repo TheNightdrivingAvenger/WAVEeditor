@@ -1,11 +1,3 @@
-/*ВСЯ РАБОТА СО ЗВУКОМ
-* ЗАПОЛНЕНИЕ ТИШИНОЙ
-* КОПИРОВАНИЕ
-* УДАЛЕНИЕ
-* ВСТАВКА
-* РЕВЕРС
-*/
-
 #include <Windows.h>
 #include <string.h>
 #include "headers\drawingarea.h"
@@ -70,18 +62,18 @@ void deletePiece(PMODELDATA pModelData)
 
 void reversePiece(PMODELDATA pModelData)
 {
-	unsigned long blockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * pModelData->wfxFormat.nBlockAlign;
-	
+	DWORD blockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) *
+																											pModelData->wfxFormat.nBlockAlign;
 	// TODO: watch out for possible overlapping
-	unsigned long bufferStart = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
+	DWORD bufferStart = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
 
 	char *curPiece = (char *)pModelData->soundData + bufferStart;
 
 	char temp[pModelData->wfxFormat.nBlockAlign];
 
-	for (unsigned long i = 0; i <= blockSize / 2; i += pModelData->wfxFormat.nBlockAlign) {
+	for (DWORD i = 0; i <= blockSize / 2; i += pModelData->wfxFormat.nBlockAlign) {
 		memcpy(temp, curPiece + i, pModelData->wfxFormat.nBlockAlign);
 		memcpy(curPiece + i, curPiece + blockSize - i - pModelData->wfxFormat.nBlockAlign, pModelData->wfxFormat.nBlockAlign);
-		memcpy(curPiece + blockSize - i, temp, pModelData->wfxFormat.nBlockAlign);
+		memcpy(curPiece + blockSize - i - pModelData->wfxFormat.nBlockAlign, temp, pModelData->wfxFormat.nBlockAlign);
 	}
 }
