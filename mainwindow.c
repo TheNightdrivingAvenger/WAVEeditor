@@ -9,27 +9,28 @@
 #include "headers\drawingarea.h"
 #include "headers\modeldata.h"
 
-// in this method taking data from model itself is OK (just to not make single-line Model methods for getting data)
-void MainWindow_UpdateView(PMAINWINDATA pSelf, int reasons, PACTIONINFO aiLastAction)
+// TODO: make this look prettier
+// TODO: when soundDataChange and selectionChange arrive together, drawing area draws 2 times instead of 1. Not good
+void MainWindow_UpdateView(PMAINWINDATA pSelf, PMODELDATA model, DWORD reasons, PACTIONINFO aiLastAction)
 {
 	if (reasons & newFileOpened) {
 		if (pSelf->player != NULL) {
 			Player_Dispose(pSelf->player);
 		}
-		pSelf->player = Player_Init(&pSelf->modelData->wfxFormat, pSelf->winHandle);
+		pSelf->player = Player_Init(&model->wfxFormat, pSelf->winHandle);
 
 		PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
-		updInfo->soundData = pSelf->modelData->soundData;
-		updInfo->dataSize = pSelf->modelData->dataSize;
-		updInfo->wfxFormat = &(pSelf->modelData->wfxFormat);
+		updInfo->soundData = model->soundData;
+		updInfo->dataSize = model->dataSize;
+		updInfo->wfxFormat = &(model->wfxFormat);
 		DrawingArea_DrawNewFile(pSelf->drawingArea, updInfo);
 		HeapFree(GetProcessHeap(), 0, updInfo);
 	}
 	if (reasons & soundDataChange) { // requires ACTIONINFO structure
 		PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
-		updInfo->soundData = pSelf->modelData->soundData;
-		updInfo->dataSize = pSelf->modelData->dataSize;
-		updInfo->wfxFormat = &(pSelf->modelData->wfxFormat);
+		updInfo->soundData = model->soundData;
+		updInfo->dataSize = model->dataSize;
+		updInfo->wfxFormat = &(model->wfxFormat);
 		DrawingArea_UpdateCache(pSelf->drawingArea, updInfo, aiLastAction);
 		HeapFree(GetProcessHeap(), 0, updInfo);
 	}
@@ -37,25 +38,38 @@ void MainWindow_UpdateView(PMAINWINDATA pSelf, int reasons, PACTIONINFO aiLastAc
 	if (reasons & curFileNameChange) {
 		//SetWindowText(pSelf->wiHandle, chosenFile);
 	}
-	if (reasons & cursorPosChange) {
-	}
 	if (reasons & selectionChange) {
+		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
 	}
 	// TODO: consider not resetting the cursor but moving it (in model)
-	if (reasons & cursorReset) {
-		DrawingArea_ResetCursor(pSelf->drawingArea);
-	}
 	if (reasons & playbackStop) {
 		MainWindow_PlaybackStop(pSelf);
 	}
+	if (reasons & zoomingIn) {
+		PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
+		updInfo->soundData = model->soundData;
+		updInfo->dataSize = model->dataSize;
+		updInfo->wfxFormat = &(model->wfxFormat);
+		DrawingArea_ZoomIn(pSelf->drawingArea, updInfo);
+		HeapFree(GetProcessHeap(), 0, updInfo);
+	} else if (reasons & zoomingOut) {
+		PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
+		updInfo->soundData = model->soundData;
+		updInfo->dataSize = model->dataSize;
+		updInfo->wfxFormat = &(model->wfxFormat);
+		DrawingArea_ZoomOut(pSelf->drawingArea, updInfo);
+		HeapFree(GetProcessHeap(), 0, updInfo);
+	} else if (reasons & fittingInWindow) {
+	}
+	if (reasons & activeRangeChange) {
+		DrawingArea_SetNewRange(pSelf->drawingArea, aiLastAction);
+	}
 }
 
-// TODO: is it ok to directly take Model's data?
-// TODO: some has to protect the player from double-start
-void MainWindow_PlaybackStart(PMAINWINDATA pSelf)
+void MainWindow_PlaybackStart(PMAINWINDATA pSelf, PMODELDATA model)
 {
 	if (pSelf->player != NULL) {
-		Player_Play(pSelf->player, pSelf->modelData->soundData, pSelf->modelData->dataSize);
+		Player_Play(pSelf->player, model->soundData, model->dataSize);
 	}
 }
 
@@ -200,6 +214,17 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	if (pMainSelf == NULL) return DefWindowProc(hWnd, uMsg, wParam, lParam);
 
 	switch (uMsg) {
+	// **** TEMP ZOOMING TEST **** //
+		case WM_KEYDOWN:
+			switch(wParam) {
+				case VK_LEFT:
+					Model_ZoomLevelChange(pMainSelf->modelData, zoomOut);
+					break;
+				case VK_RIGHT:
+					Model_ZoomLevelChange(pMainSelf->modelData, zoomIn);
+					break;
+			}
+	// **** ----------------- **** //
 		case WM_COMMAND:
 			switch (LOWORD(wParam)) {
 				case AMM_OPENFILE:

@@ -22,10 +22,10 @@ typedef struct tagCREATEINFO {
 	PMAINWINDATA parent;
 } CREATEINFO, *PCREATEINFO;
 
-void MainWindow_PlaybackStart(PMAINWINDATA pSelf);
+void MainWindow_PlaybackStart(PMAINWINDATA pSelf, PMODELDATA model);
 void MainWindow_PlaybackStop(PMAINWINDATA pSelf);
 void MainWindow_AttachDrawingArea(PMAINWINDATA pSelf, PDRAWINGWINDATA pDrawer);
 void MainWindow_AttachToolsPanel(PMAINWINDATA pSelf, PTOOLSWINDATA pTools);
-void MainWindow_UpdateView(PMAINWINDATA pSelf, int reasons, PACTIONINFO aiLastAction);
+void MainWindow_UpdateView(PMAINWINDATA pSelf, PMODELDATA model, DWORD reasons, PACTIONINFO aiLastAction);
 void MainWindow_ShowModalError(PMAINWINDATA winHandle, const wchar_t *const message, const wchar_t *const header, UINT boxType);
 void MainWindow_RegisterClass(HINSTANCE hInstance, const wchar_t *className);

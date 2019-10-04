@@ -39,9 +39,9 @@ void pastePiece(PMODELDATA pModelData)
 	if (pModelData->rgSelectedRange.nFirstSample <= pModelData->rgCopyRange.nFirstSample) {
 		pModelData->rgCopyRange.nFirstSample += copiedBlockSampleSize;
 		pModelData->rgCopyRange.nLastSample += copiedBlockSampleSize;
-		pModelData->rgSelectedRange.nFirstSample += copiedBlockSampleSize;
-		pModelData->rgSelectedRange.nLastSample += copiedBlockSampleSize;
 	}
+	pModelData->rgSelectedRange.nFirstSample += copiedBlockSampleSize;
+	pModelData->rgSelectedRange.nLastSample += copiedBlockSampleSize;
 }
 
 // deleting is inclusive on borders
@@ -63,8 +63,7 @@ void deletePiece(PMODELDATA pModelData)
 void reversePiece(PMODELDATA pModelData)
 {
 	DWORD blockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) *
-																											pModelData->wfxFormat.nBlockAlign;
-	// TODO: watch out for possible overlapping
+																										pModelData->wfxFormat.nBlockAlign;
 	DWORD bufferStart = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
 
 	char *curPiece = (char *)pModelData->soundData + bufferStart;

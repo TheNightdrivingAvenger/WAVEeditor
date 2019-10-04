@@ -10,10 +10,15 @@ typedef struct tagSAMPLERANGE {
 
 // TODO: add "close file" in menu in here?
 enum changeReasonsFlags { soundDataChange = 2 /* requires ACTIONINFO structure*/, curFileNameChange = 4 /* change window text */,
-						cursorPosChange = 8, selectionChange = 16, cursorReset = 32,
-						newFileOpened = 64, playbackStop = 128 };
+						selectionChange = 16,
+						newFileOpened = 64, playbackStop = 128, zoomingIn = 256, zoomingOut = 512, fittingInWindow = 1024,
+						activeRangeChange = 2048 };
 
-enum editActions { eaDelete, eaPaste, eaMakeSilent, eaReverse };
+enum zoomingLevelType { zoomNone, zoomIn, zoomOut, fitInWindow };
+
+enum editActions { eaNone /*none is used for "change active range" message for now, may change later*/,
+				eaDelete, eaPaste, eaMakeSilent, eaReverse };
+
 typedef struct tagEDITACTION {
 	enum editActions action;
 	SAMPLERANGE rgRange;
@@ -36,6 +41,7 @@ void Model_AttachView(PMODELDATA pSelf, struct tagMAINWINDOWDATA *view);
 void Model_Reset(PMODELDATA pSelf);
 void Model_ChangeCurFile(PMODELDATA pSelf, const wchar_t *const chosenFile);
 void Model_SaveFileAs(PMODELDATA pSelf, BOOL saveSelected, wchar_t *const chosenFile);
+void Model_UpdateActiveRange(PMODELDATA pSelf, PSAMPLERANGE newRange);
 void Model_CopySelected(PMODELDATA pSelf);
 void Model_DeletePiece(PMODELDATA pSelf);
 void Model_PastePiece(PMODELDATA pSelf);
@@ -44,3 +50,5 @@ void Model_SelectAll(PMODELDATA pSelf);
 void Model_Reverse(PMODELDATA pSelf);
 void Model_UpdateSelection(PMODELDATA pSelf, BOOL isRangeSelected, PSAMPLERANGE range);
 void Model_UpdatePlayerStatus(PMODELDATA pSelf, PlayerState status);
+void Model_ZoomLevelChange(PMODELDATA pSelf, enum zoomingLevelType zoomingType);
+PSAMPLERANGE Model_GetSelectionInfo(PMODELDATA pSelf);

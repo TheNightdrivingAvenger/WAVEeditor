@@ -8,7 +8,6 @@
 #include "headers\mainwindow.h"
 #include "headers\drawingarea.h"
 #include "headers\mainwindow.h"
-// TODO: add "View_UpdateZoomLvl"
 
 BOOL checkFormat(PWAVEFORMATEX pWfx)
 {
@@ -103,7 +102,7 @@ int Model_FileChange(PMODELDATA pSelf, HANDLE hNewFile)
 		if ((pSelf->soundData = HeapAlloc(GetProcessHeap(), 0, curChunk.chunkSize)) != NULL) {
 			pSelf->dataSize = curChunk.chunkSize;
 			if (ReadFile(hNewFile, pSelf->soundData, curChunk.chunkSize, &readres, NULL)) {
-				MainWindow_UpdateView(pSelf->mainView, newFileOpened, NULL); // r: 
+				MainWindow_UpdateView(pSelf->mainView, pSelf, newFileOpened | selectionChange, NULL); // r: 
 				return 0;
 			} else {
 				return 6;
@@ -124,13 +123,13 @@ HANDLE openFile(const wchar_t *const fileName)
 
 void Model_ChangeCurFile(PMODELDATA pSelf, const wchar_t *const chosenFile)
 {
-	MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+	MainWindow_UpdateView(pSelf->mainView, pSelf, playbackStop, NULL);
 	HANDLE hFile;
 	if ((hFile = openFile(chosenFile)) != INVALID_HANDLE_VALUE) {
 		switch (Model_FileChange(pSelf, hFile)) {
 			case 0:
 				// TODO: consider making a separate method in the View
-				MainWindow_UpdateView(pSelf->mainView, curFileNameChange, NULL); // r: file name changed
+				MainWindow_UpdateView(pSelf->mainView, pSelf, curFileNameChange, NULL);
 				break;
 			case 1:
 				MainWindow_ShowModalError(pSelf->mainView, L"Файл не поддерживается либо имеет повреждённую структуру.\nВозможно, он не является .wav файлом.", L"Ошибка", MB_ICONERROR);
@@ -164,7 +163,7 @@ void Model_ChangeCurFile(PMODELDATA pSelf, const wchar_t *const chosenFile)
 	} else {
 		MainWindow_ShowModalError(pSelf->mainView, L"Невозможно открыть выбранный файл", L"Ошибка", MB_ICONERROR);
 	}
-	MainWindow_UpdateView(pSelf->mainView, cursorReset, NULL);
+	MainWindow_UpdateView(pSelf->mainView, pSelf, selectionChange, NULL);
 }
 
 // returns zero if saved successfully
@@ -238,7 +237,7 @@ HANDLE saveFile(wchar_t *fileName)
 
 void Model_SaveFileAs(PMODELDATA pSelf, BOOL saveSelected, wchar_t *const chosenFile)
 {
-	MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+	MainWindow_UpdateView(pSelf->mainView, pSelf, playbackStop, NULL);
 	LRESULT res;
 	HANDLE hFile;
 	if ((hFile = saveFile(chosenFile)) != INVALID_HANDLE_VALUE) {
@@ -256,7 +255,7 @@ void Model_SaveFileAs(PMODELDATA pSelf, BOOL saveSelected, wchar_t *const chosen
 					MainWindow_ShowModalError(pSelf->mainView, L"Что-то пошло не так... Пожалуйста, перезапустите программу.\nВаша работа была сохранена", L"Ошибка", MB_ICONERROR);
 					Model_Reset(pSelf);
 				} else {
-					MainWindow_UpdateView(pSelf->mainView, curFileNameChange, NULL);
+					MainWindow_UpdateView(pSelf->mainView, pSelf, curFileNameChange, NULL);
 					pSelf->isChanged = FALSE;
 				}
 			}
@@ -276,6 +275,16 @@ void Model_SaveFileAs(PMODELDATA pSelf, BOOL saveSelected, wchar_t *const chosen
 	}
 }
 
+void Model_UpdateActiveRange(PMODELDATA pSelf, PSAMPLERANGE newRange)
+{
+	PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
+	lastAction->action = eaPaste;
+	lastAction->rgRange.nFirstSample = newRange->nFirstSample;
+	lastAction->rgRange.nLastSample = newRange->nLastSample;
+	MainWindow_UpdateView(pSelf->mainView, pSelf, activeRangeChange, lastAction);
+	HeapFree(GetProcessHeap(), 0, lastAction);
+}
+
 void Model_CopySelected(PMODELDATA pSelf)
 {
 	// structure assignment is OK, just a memory copy
@@ -286,7 +295,7 @@ void Model_CopySelected(PMODELDATA pSelf)
 void Model_DeletePiece(PMODELDATA pSelf)
 {
 	if (pSelf->rgSelectedRange.nFirstSample != pSelf->rgSelectedRange.nLastSample) {
-		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, playbackStop, NULL);
 
 		deletePiece(pSelf);
 
@@ -298,7 +307,7 @@ void Model_DeletePiece(PMODELDATA pSelf)
 		// if we deleted something, then copied piece is no longer valid
 		ZeroMemory(&pSelf->rgCopyRange, sizeof(SAMPLERANGE));
 
-		MainWindow_UpdateView(pSelf->mainView, soundDataChange | cursorReset, lastAction); //r: sound data change
+		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange | selectionChange, lastAction); //r: sound data change
 		HeapFree(GetProcessHeap(), 0, lastAction);
 	}
 	pSelf->isChanged = TRUE;
@@ -308,7 +317,7 @@ void Model_DeletePiece(PMODELDATA pSelf)
 void Model_PastePiece(PMODELDATA pSelf)
 {
 	if (pSelf->rgCopyRange.nFirstSample != pSelf->rgCopyRange.nLastSample) {
-		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, playbackStop, NULL);
 
 		pastePiece(pSelf);
 
@@ -317,12 +326,10 @@ void Model_PastePiece(PMODELDATA pSelf)
 		lastAction->rgRange.nFirstSample = pSelf->rgSelectedRange.nFirstSample;
 		lastAction->rgRange.nLastSample = pSelf->rgCopyRange.nLastSample - pSelf->rgCopyRange.nFirstSample;
 
-		// TODO: WARNING! UPDATE THE CURSOR!! SELECT the newly pasted piece!
-		pSelf->rgSelectedRange.nLastSample = pSelf->rgSelectedRange.nFirstSample;
-		// soundworker in pastePiece moves the copied range if needed so it will be valid, no need to zero it
+		// soundworker in pastePiece moves the copied range (as well as selected range) if needed so it will be valid, no need to zero it
 		// TODO: consider to make it more explicit
 
-		MainWindow_UpdateView(pSelf->mainView, soundDataChange | cursorReset, lastAction);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange | selectionChange, lastAction);
 		HeapFree(GetProcessHeap(), 0, lastAction);
 	}
 	pSelf->isChanged = TRUE;
@@ -331,7 +338,7 @@ void Model_PastePiece(PMODELDATA pSelf)
 void Model_MakeSilent(PMODELDATA pSelf)
 {
 	if (pSelf->rgSelectedRange.nFirstSample != pSelf->rgSelectedRange.nLastSample) {
-		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, playbackStop, NULL);
 
 		makeSilent(pSelf);
 		// zero the copy range just for safety
@@ -340,7 +347,7 @@ void Model_MakeSilent(PMODELDATA pSelf)
 		PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
 		lastAction->action = eaMakeSilent;
 		lastAction->rgRange = pSelf->rgSelectedRange;
-		MainWindow_UpdateView(pSelf->mainView, soundDataChange, lastAction);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange, lastAction);
 		HeapFree(GetProcessHeap(), 0, lastAction);
 	}
 	pSelf->isChanged = TRUE;
@@ -352,21 +359,21 @@ void Model_SelectAll(PMODELDATA pSelf)
 		pSelf->rgSelectedRange.nFirstSample = 0;
 		pSelf->rgSelectedRange.nLastSample = pSelf->dataSize / pSelf->wfxFormat.nBlockAlign - 1;
 
-		MainWindow_UpdateView(pSelf->mainView, selectionChange, NULL);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, selectionChange, NULL);
 	}
 }
 
 void Model_Reverse(PMODELDATA pSelf)
 {
 	if (pSelf->rgSelectedRange.nFirstSample != pSelf->rgSelectedRange.nLastSample) {
-		MainWindow_UpdateView(pSelf->mainView, playbackStop, NULL);
+		MainWindow_UpdateView(pSelf->mainView, pSelf, playbackStop, NULL);
 
 		reversePiece(pSelf);
 
 		PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
 		lastAction->action = eaReverse;
 		lastAction->rgRange = pSelf->rgSelectedRange;
-		MainWindow_UpdateView(pSelf->mainView, soundDataChange, lastAction);  //r: sound data change
+		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange, lastAction);
 		HeapFree(GetProcessHeap(), 0, lastAction);
 	}
 	pSelf->isChanged = TRUE;
@@ -387,5 +394,27 @@ void Model_UpdateSelection(PMODELDATA pSelf, BOOL isRangeSelected, PSAMPLERANGE 
 				pSelf->rgSelectedRange.nLastSample = tmp;
 			}
 		}
+		MainWindow_UpdateView(pSelf->mainView, pSelf, selectionChange, NULL);
 	}
+}
+
+// zoomIn: true if zooming in, false if zooming out
+void Model_ZoomLevelChange(PMODELDATA pSelf, enum zoomingLevelType zoomingType)
+{
+	switch (zoomingType) {
+		case zoomIn:
+			MainWindow_UpdateView(pSelf->mainView, pSelf, zoomingIn, NULL);
+			break;
+		case zoomOut:
+			MainWindow_UpdateView(pSelf->mainView, pSelf, zoomingOut, NULL);
+			break;
+		case fitInWindow:
+			MainWindow_UpdateView(pSelf->mainView, pSelf, fittingInWindow, NULL);
+			break;
+	}
+}
+
+PSAMPLERANGE Model_GetSelectionInfo(PMODELDATA pSelf)
+{
+	return &pSelf->rgSelectedRange;
 }

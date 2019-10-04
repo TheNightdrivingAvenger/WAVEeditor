@@ -31,8 +31,16 @@ PPLAYERDATA Player_Init(PWAVEFORMATEX wfxFormat, HWND callbackWindow)
 	}
 }
 
+void Player_Resume(PPLAYERDATA pSelf)
+{
+	// TODO: implement resuming
+}
+
 int Player_Play(PPLAYERDATA pSelf, void *soundData, int dataSize)
 {
+	if (pSelf->playerState == paused) {
+		Player_Resume(pSelf);
+	}
 	ZeroMemory(&pSelf->lastUsedHeader, sizeof(WAVEHDR));
 	pSelf->lastUsedHeader.lpData = soundData;
 	pSelf->lastUsedHeader.dwBufferLength = dataSize;

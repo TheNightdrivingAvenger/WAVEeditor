@@ -98,9 +98,10 @@ int ToolsPanel_Pause_OnClick(PTOOLSWINDATA pSelf)
 	return 0;
 }
 
+// TODO: make this update through model or somehow else; I shouldn't use pSelf->modelData here
 int ToolsPanel_Play_OnClick(PTOOLSWINDATA pSelf)
 {
-	MainWindow_PlaybackStart(pSelf->parentWindow);
+	MainWindow_PlaybackStart(pSelf->parentWindow, pSelf->modelData);
 	return 0;
 }
 

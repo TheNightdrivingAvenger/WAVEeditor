@@ -5,13 +5,14 @@
 
 #include "headers\drawingarea.h"
 #include "headers\sounddrawer.h"
+#include "headers\modeldata.h"
 
 unsigned long calcMinMax8(WORD chanNum, int resArr[chanNum][2], void *source, unsigned long offset, int samplesNum);
 unsigned long calcMinMax16(WORD chanNum, int resArr[chanNum][2], void *source, unsigned long offset, int samplesNum);
 
 typedef unsigned long (*minMaxCalculator)(WORD, int [*][2], void *, unsigned long, int);
 
-BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PWAVEFORMATEX wfxFormat)
+BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PWAVEFORMATEX wfxFormat, enum zoomingLevelType zoomingType)
 {
 	float minSampleVal = 0;
 	
@@ -20,11 +21,11 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	switch (wfxFormat->wBitsPerSample)
 	{
 		case 8:
-			calcMinMax = &calcMinMax8;
+			calcMinMax = calcMinMax8;
 			minSampleVal = 0;
 			break;
 		case 16:
-			calcMinMax = &calcMinMax16;
+			calcMinMax = calcMinMax16;
 			minSampleVal = -32768;
 			break;
 		default:
@@ -32,21 +33,33 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	}
 
 	// total displayed samples
-	unsigned long totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample;
+	sampleIndex totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample + 1;
 	if (totalSamples == 0) return FALSE;
 
-	float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT);
+	float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT);
 
 	if (samplesToWidth >= 1) {
 		float intPart;
-		if (modff(samplesToWidth, &intPart) > 0) {
+		if ((modff(samplesToWidth, &intPart) > 0) && (zoomingType == fitInWindow)) {
 			windowProps->samplesInBlock = (int)truncf(intPart + 1);
 		} else {
-			windowProps->samplesInBlock = (int)roundf(intPart);
+			windowProps->samplesInBlock = (int)truncf(intPart);
 		}
 	} else {
 		windowProps->samplesInBlock = 1;
 	}
+
+	if (zoomingType != zoomNone) {
+		windowProps->stepX = 1;
+		if (windowProps->samplesInBlock == 1) {
+			if (zoomingType == fitInWindow) {
+				windowProps->stepX = max(1, (windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT) / totalSamples);
+			} else {
+				windowProps->stepX = max(1, (int)roundf((windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT) / (float)totalSamples));
+			}
+		}
+	}
+
 	int delta; //how many samples were processed in min-max
 	int resArr[wfxFormat->nChannels][2];
 
@@ -55,17 +68,18 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	}
 	windowProps->lastSample = dataSize / wfxFormat->nBlockAlign - 1;
 	// samples in all channels
-	totalSamples = wfxFormat->nChannels * (windowProps->lastSample + 1);
+	sampleIndex totalFileSamples = wfxFormat->nChannels * (windowProps->lastSample + 1);
 
 																	  // 2 -- min and max
-	if ((windowProps->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalSamples / windowProps->samplesInBlock) + 1))) == NULL) {
+	if ((windowProps->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalFileSamples / windowProps->samplesInBlock) + 1))) == NULL) {
 		return FALSE;
 	}
 
 	int *cache = (int *)windowProps->minMaxChunksCache;
 
 	windowProps->cacheLength = 0;
-	for (unsigned long i = 0; (i + windowProps->samplesInBlock * wfxFormat->nChannels) <= totalSamples; i += delta) {
+	sampleIndex i;
+	for (i = 0; (i + windowProps->samplesInBlock * wfxFormat->nChannels) <= totalFileSamples; i += delta) {
 		delta = calcMinMax(wfxFormat->nChannels, resArr, soundData, i, windowProps->samplesInBlock);
 
 		for (int j = 0; j < wfxFormat->nChannels; j++) {
@@ -75,25 +89,28 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 		cache += wfxFormat->nChannels * 2; // * 2 -- min and max
 		(windowProps->cacheLength)++;
 	}
-	return TRUE;
+	if (i < totalFileSamples) {
+		i += calcMinMax(wfxFormat->nChannels, resArr, soundData, i, (totalFileSamples - i) / wfxFormat->nChannels);
+		for (int j = 0; j < wfxFormat->nChannels; j++) {
+			cache[j * 2] = resArr[j][0];
+			cache[j * 2 + 1] = resArr[j][1];
+		}
+		(windowProps->cacheLength)++;
+	}
+	return i;// - delta;//windowProps->samplesInBlock * wfxFormat->nChannels;
 }
 
 void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 {
-	unsigned long totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample;
+	sampleIndex totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample + 1;
 
 	if (totalSamples == 0) return;
-
-	windowProps->stepX = 1;
-	if (windowProps->samplesInBlock == 1) {
-		windowProps->stepX = (windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT) / totalSamples;
-	}
 
 	int zeroChannelLvl = (windowProps->rcClientSize.bottom - 1) / wfxFormat->nChannels;
 
 	// integer division -- truncation towards zero. We take the block in which the first sample is
-	unsigned long cachePos = windowProps->rgCurDisplayedRange.nFirstSample / windowProps->samplesInBlock;
-	unsigned long bufferStart = cachePos * wfxFormat->nChannels * 2; //min max cache offset
+	long cachePos = windowProps->rgCurDisplayedRange.nFirstSample / windowProps->samplesInBlock;
+	unsigned long bufferStart = cachePos * wfxFormat->nChannels * 2; // min max cache offset
 
 	int *cache = (int *)windowProps->minMaxChunksCache + bufferStart;
 
@@ -106,8 +123,10 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 	}
 
 	// did user just set the marker or selected a range?
+	//if (windowProps->rcSelectedRange.left >= 0) TODO: add hidden cursor (-1 on selected range)
+	BOOL isVisible = (windowProps->rcSelectedRange.left >= 0);
 	BOOL isMarker = ((windowProps->rcSelectedRange.right - windowProps->rcSelectedRange.left) <= CURSOR_THICKNESS);
-	if (!isMarker)
+	if (isVisible && !isMarker)
 	{
 		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);
 	}
@@ -115,8 +134,8 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 	SelectObject(windowProps->backDC, windowProps->curPen);
 	int xPos;
 	// drawing until we hit the end of the cache or window border
-	for (xPos = 0; xPos < (windowProps->rcClientSize.right - SCREEN_DELTA_RIGHT)
-			&& cachePos < windowProps->cacheLength; xPos += windowProps->stepX) {
+	for (xPos = 0; xPos <= (windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT)
+			&& cachePos <= windowProps->cacheLength - 1; xPos += windowProps->stepX) {
 		// drawing all channels in cycle
 		for (int j = 0; j < wfxFormat->nChannels; j++) {
 			normalizedMin = cache[j * 2] * zeroChannelLvl / soundDepth + zeroChannelLvl * (j + 1);
@@ -129,12 +148,11 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 		cache += wfxFormat->nChannels * 2;
 		cachePos++;
 	}
-	// if somehow window was too narrow we need to sync last displayed sample number with the last one actually drawn
-	windowProps->rgCurDisplayedRange.nLastSample = min(windowProps->lastSample,
-		cachePos * windowProps->samplesInBlock + windowProps->samplesInBlock - 1);
+	// min because there could be less samples in the last block than in others and we can go out of buffer's bounds
+	windowProps->rgCurDisplayedRange.nLastSample = min(windowProps->lastSample, cachePos * windowProps->samplesInBlock - 1);
 
 	windowProps->lastUsedPixelX = xPos - windowProps->stepX;
-	if (isMarker) {
+	if (isVisible && isMarker) {
 		SelectObject(windowProps->backDC, windowProps->borderPen);
 		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);
 	}
@@ -157,7 +175,6 @@ unsigned long calcMinMax8(WORD chanNum, int resArr[chanNum][2], void *source, un
 		int sampleCounter = 0;
 	
 		unsigned char *curPos = (unsigned char *)source + offset;
-		// TODO: should it be +=i on the first iteration?
 		for (curPos += i; sampleCounter < samplesNum; curPos += chanNum) {
 			unsigned char temp = *curPos;
 			if (temp < min) min = temp;

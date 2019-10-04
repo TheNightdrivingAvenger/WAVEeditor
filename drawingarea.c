@@ -9,19 +9,23 @@
 #include "headers\constants.h"
 #include "headers\sounddrawer.h"
 
+void DrawingArea_DrawWave(PDRAWINGWINDATA pSelf);
+
 BOOL DrawingArea_DrawNewFile(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 {
-	pSelf->zoomLvl = 1;
 	pSelf->soundMetadata = *(updateInfo->wfxFormat);
 	pSelf->rgCurDisplayedRange.nFirstSample = 0;
 	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
 
 	pSelf->lastSample = pSelf->rgCurDisplayedRange.nLastSample;
-	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
-	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+
+	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, fitInWindow);
+	DrawingArea_DrawWave(pSelf);
+
 	SCROLLINFO scrollInfo = (SCROLLINFO){ sizeof(SCROLLINFO), SIF_ALL | SIF_DISABLENOSCROLL,
 										0, pSelf->cacheLength, pSelf->cacheLength, 0};
 	SetScrollInfo(pSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
 	//pSelf->blocksInScrollStep = 1;
 	return res;
 }
@@ -32,18 +36,25 @@ BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACT
 	pSelf->soundMetadata = *(updateInfo->wfxFormat);
 	pSelf->lastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
 
-	sampleIndex curDisplayedRangeLength = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample;
+	sampleIndex curDisplayedRangeLength = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample + 1;
 	// range where action occured starts outside of visible region, so we jump to it
+	// TODO: this changes scale if action occured at the end of the file. Should make it no shorter than curDisplayedRangeLength
 	if ((aiAction->rgRange.nFirstSample < pSelf->rgCurDisplayedRange.nFirstSample)
 		|| (aiAction->rgRange.nFirstSample > pSelf->rgCurDisplayedRange.nLastSample)) {
 
 		pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
+		sampleIndex samplesDelta = pSelf->lastSample - aiAction->rgRange.nFirstSample + 1;
+		// TODO: finish this
+		if (samplesDelta < curDisplayedRangeLength - 1) {
+			pSelf->rgCurDisplayedRange.nFirstSample = max(0, pSelf->rgCurDisplayedRange.nFirstSample - samplesDelta);
+		}
 	}
 	// choose minimum between total samples count and previous range width
 	pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->lastSample,
 		pSelf->rgCurDisplayedRange.nFirstSample + curDisplayedRangeLength);
 
-	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat);
+	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, zoomNone);
+	DrawingArea_DrawWave(pSelf);
 	InvalidateRect(pSelf->winHandle, NULL, TRUE);
 
 	SCROLLINFO scrollInfo = (SCROLLINFO){ sizeof(SCROLLINFO), SIF_ALL | SIF_DISABLENOSCROLL,
@@ -57,25 +68,64 @@ BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACT
 	return res;
 }
 
-// probably will be not pos, but sample number, so calculactions and stuff
-void DrawingArea_UpdateCursor(PDRAWINGWINDATA pSelf, int pos)
+void DrawingArea_SampleRangeToSelection(PDRAWINGWINDATA pSelf, PSAMPLERANGE range)
 {
-	pSelf->rcSelectedRange.left = pos;
-	pSelf->rcSelectedRange.right = pos + CURSOR_THICKNESS;
-	InvalidateRect(pSelf->winHandle, NULL, TRUE);
-}
+	if (pSelf->minMaxChunksCache != NULL) {
+		sampleIndex minEnd = min(range->nLastSample, pSelf->rgCurDisplayedRange.nLastSample);
+		sampleIndex maxStart = max(range->nFirstSample, pSelf->rgCurDisplayedRange.nFirstSample);
+		sampleIndex intersectedSegment = minEnd - maxStart;
 
-void DrawingArea_ResetCursor(PDRAWINGWINDATA pSelf)
-{
-	// TODO: not like this, if zoomed-in it will be in the left side of the screen, but needs to be off-screen (on the first sample)
-	if (pSelf->rgCurDisplayedRange.nFirstSample > 0) {
+		if (intersectedSegment >= 0) {
+			pSelf->rcSelectedRange.left = maxStart / pSelf->samplesInBlock * pSelf->stepX -
+				pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
+			if (range->nFirstSample == range->nLastSample) {
+				pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + CURSOR_THICKNESS;
+			} else {
+				pSelf->rcSelectedRange.right = minEnd / pSelf->samplesInBlock * pSelf->stepX -
+					pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
+			}
+		} else {
+			pSelf->rcSelectedRange.left = pSelf->rcSelectedRange.right = -1;
+		}
+		//if ((range->nFirstSample == range->nLastSample) && (range->nFirstSample >= pSelf->rgCurDisplayedRange.nFirstSample)
+			//&& (range->nLastSample <= pSelf->rgCurDisplayedRange.nLastSample)) {
+
+			//pSelf->rcSelectedRange.left = (range->nFirstSample - pSelf->rgCurDisplayedRange.nFirstSample) / pSelf->samplesInBlock * pSelf->stepX;
+			//pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + CURSOR_THICKNESS;
+		//}
+		//if ((abs(range->nFirstSample - pSelf->rgCurDisplayedRange.nFirstSample)
+			//<= pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample) {
+
+			//pSelf->rcSelectedRange.left = max(0, (range->nFirstSample - pSelf->rgCurDisplayedRange.nFirstSample) / pSelf->samplesInBlock * pSelf->stepX);
+			//pSelf->rcSelectedRange.right = min(pSelf->rcClientSize.right, (range->nLastSample - pSelf->rgCurDisplayedRange.nFirstSample) / pSelf->samplesInBlock * pSelf->stepX
+		//}
 	}
-	pSelf->rcSelectedRange.left = 0;
-	pSelf->rcSelectedRange.right = CURSOR_THICKNESS;
+}
+
+void DrawingArea_SetNewRange(PDRAWINGWINDATA pSelf, PACTIONINFO aiAction)
+{
+	pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
+	pSelf->rgCurDisplayedRange.nLastSample = aiAction->rgRange.nLastSample;
+	SCROLLINFO scrollInfo = (SCROLLINFO){ sizeof(SCROLLINFO), SIF_POS | SIF_DISABLENOSCROLL,
+										0, 0, 0,
+										pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock, 0};
+	// TODO: this division is not good, consider saving another range (in blocks) ^^^
+	SetScrollInfo(pSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
+	// TODO: consider embedding this model pointer to ACTIONINFO struct, because I shouldn't use it directly like this
+	DrawingArea_SampleRangeToSelection(pSelf, Model_GetSelectionInfo(pSelf->modelData));
+	DrawingArea_DrawWave(pSelf);
+	// A bit laggy, can use update window or leave it as it is (it's OK)
 	InvalidateRect(pSelf->winHandle, NULL, TRUE);
 }
 
-unsigned long DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoords)
+void DrawingArea_UpdateSelection(PDRAWINGWINDATA pSelf, PSAMPLERANGE newRange)
+{
+	DrawingArea_SampleRangeToSelection(pSelf, newRange);
+	DrawingArea_DrawWave(pSelf);
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+}
+
+sampleIndex DrawingArea_CoordsToSample(PDRAWINGWINDATA pSelf, LPARAM clickCoords)
 {
 	// cache pointer can't be null, because when file changing occurs, cache gets updated with main window message
 	// so it's used here as a marker if there's any file currently open
@@ -138,6 +188,33 @@ void DrawingArea_RecalcCurDisplayedRange(PDRAWINGWINDATA pSelf)
 	}
 }
 
+// Zooms in ~2x times
+void DrawingArea_ZoomIn(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
+{
+	if (pSelf->stepX <= MAX_STEPX) {
+		sampleIndex totalSamples = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample;
+		sampleIndex zoomDelta = totalSamples / 4;
+		// TODO: fix
+		pSelf->rgCurDisplayedRange.nFirstSample = max(0, pSelf->rgCurDisplayedRange.nFirstSample + zoomDelta);
+		pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->rgCurDisplayedRange.nLastSample - zoomDelta, pSelf->lastSample);
+		recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, zoomIn);
+		DrawingArea_DrawWave(pSelf);
+		InvalidateRect(pSelf->winHandle, NULL, TRUE);
+	}
+}
+
+// Zooms out ~2x times
+void DrawingArea_ZoomOut(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
+{
+	sampleIndex totalSamples = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample;
+	sampleIndex zoomDelta = totalSamples / 4;
+	pSelf->rgCurDisplayedRange.nFirstSample = max(0, pSelf->rgCurDisplayedRange.nFirstSample - zoomDelta);
+	pSelf->rgCurDisplayedRange.nLastSample = min(pSelf->rgCurDisplayedRange.nLastSample + zoomDelta, pSelf->lastSample);
+	recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, zoomOut);
+	DrawingArea_DrawWave(pSelf);
+	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+}
+
 // if false, prev bitmap was not destroyed, but new wasn't created
 BOOL DrawingArea_UpdateBackBuffer(PDRAWINGWINDATA pSelf)
 {
@@ -179,7 +256,6 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		pDrawSelf->winHandle = hWnd;
 		pDrawSelf->modelData = ((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->model;
 		MainWindow_AttachDrawingArea(((PCREATEINFO)((LPCREATESTRUCT)lParam)->lpCreateParams)->parent, pDrawSelf);
-		pDrawSelf->zoomLvl = 1;
 
 		pDrawSelf->curPen = CreatePen(PS_SOLID, 1, RGB(255,128,0));
 		pDrawSelf->borderPen = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
@@ -193,6 +269,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + CURSOR_THICKNESS;
 
 		DrawingArea_CreateBackBuffer(pDrawSelf); // ADD CHECKING!!!
+		DrawingArea_DrawWave(pDrawSelf);
 
 		scrollInfo.cbSize = sizeof(SCROLLINFO);
 		scrollInfo.fMask = SIF_ALL | SIF_DISABLENOSCROLL;
@@ -218,8 +295,8 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			Model_UpdateSelection(pDrawSelf->modelData, FALSE, rgNewSelectedRange);
 			HeapFree(GetProcessHeap(), 0, rgNewSelectedRange);
 
-			pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
-			pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + CURSOR_THICKNESS;
+			//pDrawSelf->rcSelectedRange.left = GET_X_LPARAM(lParam);
+			//pDrawSelf->rcSelectedRange.right = pDrawSelf->rcSelectedRange.left + CURSOR_THICKNESS;
 			
 			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
 			return 0;
@@ -253,19 +330,20 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 					break;
 				// User clicked the top arrow.
 				case SB_LINEUP:
-					scrollInfo.nPos -= 1;
+					scrollInfo.nPos = max(scrollInfo.nMin, scrollInfo.nPos - 1);
 					break;
 				// User clicked the bottom arrow.
 				case SB_LINEDOWN:
-					scrollInfo.nPos += 1;
+					scrollInfo.nPos = min(scrollInfo.nMax, scrollInfo.nPos + 1);
 					break;
 				// User clicked the scroll bar shaft above the scroll box.
 				case SB_PAGEUP:
-					scrollInfo.nPos -= scrollInfo.nPage;
+				// explicit int conversion because nPage is UINT, so nPos would be converted to UINT too
+					scrollInfo.nPos = max(scrollInfo.nMin, scrollInfo.nPos - (int)scrollInfo.nPage);
 					break;
 				// User clicked the scroll bar shaft below the scroll box.
 				case SB_PAGEDOWN:
-					scrollInfo.nPos += scrollInfo.nPage;
+					scrollInfo.nPos = min(scrollInfo.nMax - (scrollInfo.nPage - 1), scrollInfo.nPos + scrollInfo.nPage);
 					break;
 				// User dragged the scroll box.
 				case SB_THUMBPOSITION:
@@ -273,20 +351,16 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 					scrollInfo.nPos = scrollInfo.nTrackPos;
 					break;
 			}
-			scrollInfo.fMask = SIF_POS;
-			// Set the position and then retrieve it. Due to adjustments
-			// by Windows it may not be the same as the value set.
-			SetScrollInfo(pDrawSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
-			GetScrollInfo(pDrawSelf->winHandle, SB_HORZ, &scrollInfo);
-			sampleIndex curDisplayedRangeLength = pDrawSelf->rgCurDisplayedRange.nLastSample - pDrawSelf->rgCurDisplayedRange.nFirstSample;
+			sampleIndex curDisplayedRangeLength = pDrawSelf->rgCurDisplayedRange.nLastSample - pDrawSelf->rgCurDisplayedRange.nFirstSample + 1;
+			// TODO: consider using separate SAMPLERANGE variable
 			pDrawSelf->rgCurDisplayedRange.nFirstSample = scrollInfo.nPos * pDrawSelf->samplesInBlock;// * pDrawSelf->blocksInScrollStep;
 			pDrawSelf->rgCurDisplayedRange.nLastSample = min(pDrawSelf->lastSample,
-				pDrawSelf->rgCurDisplayedRange.nFirstSample + curDisplayedRangeLength);
-			InvalidateRect(pDrawSelf->winHandle, NULL, TRUE);
+				pDrawSelf->rgCurDisplayedRange.nFirstSample + curDisplayedRangeLength - 1);
+
+			Model_UpdateActiveRange(pDrawSelf->modelData, &pDrawSelf->rgCurDisplayedRange);
 			return 0;
 		case WM_PAINT:
 			pDrawSelf->hdc = BeginPaint(pDrawSelf->winHandle, &ps);
-			DrawingArea_DrawWave(pDrawSelf);
 			BitBlt(pDrawSelf->hdc, 0, 0, pDrawSelf->rcClientSize.right, pDrawSelf->rcClientSize.bottom, pDrawSelf->backDC, 0, 0, SRCCOPY);
 			EndPaint(pDrawSelf->winHandle, &ps);
 			return 0;
@@ -306,6 +380,7 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 			}
 
 			DrawingArea_UpdateBackBuffer(pDrawSelf); // ADD CHECKING!!
+			DrawingArea_DrawWave(pDrawSelf);
 			pDrawSelf->rcSelectedRange.top = pDrawSelf->rcClientSize.top;
 			pDrawSelf->rcSelectedRange.bottom = pDrawSelf->rcClientSize.bottom;
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
