@@ -15,9 +15,9 @@ BOOL DrawingArea_DrawNewFile(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 {
 	pSelf->soundMetadata = *(updateInfo->wfxFormat);
 	pSelf->rgCurDisplayedRange.nFirstSample = 0;
-	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
+	pSelf->rgCurDisplayedRange.nLastSample = 10;//updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
 
-	pSelf->lastSample = pSelf->rgCurDisplayedRange.nLastSample;
+	pSelf->lastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;//pSelf->rgCurDisplayedRange.nLastSample;
 
 	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, fitInWindow);
 	DrawingArea_DrawWave(pSelf);
@@ -39,12 +39,12 @@ void DrawingArea_SampleRangeToSelection(PDRAWINGWINDATA pSelf, PSAMPLERANGE rang
 
 		if (intersectedSegment >= 0) {
 			pSelf->rcSelectedRange.left = maxStart / pSelf->samplesInBlock * pSelf->stepX -
-				pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
+				pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock * pSelf->stepX;
 			if (range->nFirstSample == range->nLastSample) {
 				pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + CURSOR_THICKNESS;
 			} else {
 				pSelf->rcSelectedRange.right = minEnd / pSelf->samplesInBlock * pSelf->stepX -
-					pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
+					pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock * pSelf->stepX;
 			}
 		} else {
 			pSelf->rcSelectedRange.left = pSelf->rcSelectedRange.right = -1;
@@ -56,17 +56,18 @@ void DrawingArea_SampleRangeToSelection(PDRAWINGWINDATA pSelf, PSAMPLERANGE rang
 BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACTIONINFO aiAction)
 {
 	pSelf->soundMetadata = *(updateInfo->wfxFormat);
-	pSelf->lastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
+	pSelf->lastSample = max(0, updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1);
 
 	sampleIndex curDisplayedRangeLength = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample + 1;
 	// range where action occured starts outside of visible region, so we jump to it
 	if ((aiAction->rgRange.nFirstSample < pSelf->rgCurDisplayedRange.nFirstSample)
 		|| (aiAction->rgRange.nFirstSample > pSelf->rgCurDisplayedRange.nLastSample)) {
 
-		pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
 		sampleIndex samplesDelta = pSelf->lastSample - aiAction->rgRange.nFirstSample + 1;
 		if (samplesDelta <= curDisplayedRangeLength - 1) {
 			pSelf->rgCurDisplayedRange.nFirstSample = max(0, pSelf->lastSample - curDisplayedRangeLength + 1);
+		} else {
+			pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
 		}
 	}
 	// choose minimum between total samples count and previous range width
