@@ -41,6 +41,7 @@ void Model_Reset(PMODELDATA pSelf)
 }
 
 // TODO: looks ugly, maybe I can do something about it
+// !TODO!: don't forget to set defaults
 /*
 * Return codes: 0 OK
 *				1 not RIFF
@@ -277,7 +278,7 @@ void Model_SaveFileAs(PMODELDATA pSelf, BOOL saveSelected, wchar_t *const chosen
 void Model_UpdateActiveRange(PMODELDATA pSelf, PSAMPLERANGE newRange)
 {
 	PACTIONINFO lastAction = HeapAlloc(GetProcessHeap(), 0, sizeof(ACTIONINFO));
-	lastAction->action = eaNone;
+	lastAction->action = eaPaste;
 	lastAction->rgRange.nFirstSample = newRange->nFirstSample;
 	lastAction->rgRange.nLastSample = newRange->nLastSample;
 	MainWindow_UpdateView(pSelf->mainView, pSelf, activeRangeChange, lastAction);
@@ -309,8 +310,8 @@ void Model_DeletePiece(PMODELDATA pSelf)
 
 		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange | selectionChange, lastAction); //r: sound data change
 		HeapFree(GetProcessHeap(), 0, lastAction);
-		pSelf->isChanged = TRUE;
 	}
+	pSelf->isChanged = TRUE;
 }
 
 // lastAction: first sample -- paste position, last sample -- piece length
@@ -331,8 +332,8 @@ void Model_PastePiece(PMODELDATA pSelf)
 
 		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange | selectionChange, lastAction);
 		HeapFree(GetProcessHeap(), 0, lastAction);
-		pSelf->isChanged = TRUE;
 	}
+	pSelf->isChanged = TRUE;
 }
 
 void Model_MakeSilent(PMODELDATA pSelf)
@@ -349,8 +350,8 @@ void Model_MakeSilent(PMODELDATA pSelf)
 		lastAction->rgRange = pSelf->rgSelectedRange;
 		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange, lastAction);
 		HeapFree(GetProcessHeap(), 0, lastAction);
-		pSelf->isChanged = TRUE;
 	}
+	pSelf->isChanged = TRUE;
 }
 
 void Model_SelectAll(PMODELDATA pSelf)
@@ -375,8 +376,8 @@ void Model_Reverse(PMODELDATA pSelf)
 		lastAction->rgRange = pSelf->rgSelectedRange;
 		MainWindow_UpdateView(pSelf->mainView, pSelf, soundDataChange, lastAction);
 		HeapFree(GetProcessHeap(), 0, lastAction);
-		pSelf->isChanged = TRUE;
 	}
+	pSelf->isChanged = TRUE;
 }
 
 void Model_UpdateSelection(PMODELDATA pSelf, BOOL isRangeSelected, PSAMPLERANGE range)

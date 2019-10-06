@@ -59,7 +59,7 @@ void MainWindow_UpdateView(PMAINWINDATA pSelf, PMODELDATA model, DWORD reasons, 
 		HeapFree(GetProcessHeap(), 0, updInfo);
 	} else if (reasons & fittingInWindow) {
 	}
-	if (reasons & activeRangeChange) { // requires ACTIONINFO structure
+	if (reasons & activeRangeChange) {
 		DrawingArea_SetNewRange(pSelf->drawingArea, aiLastAction);
 		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
 	}
