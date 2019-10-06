@@ -48,7 +48,7 @@ void pastePiece(PMODELDATA pModelData)
 void deletePiece(PMODELDATA pModelData)
 {
 	DWORD cutBlockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * 
-																											pModelData->wfxFormat.nBlockAlign;
+																										pModelData->wfxFormat.nBlockAlign;
 	DWORD pastePos = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
 
 	// address of the piece that needs to get moved for shrinking

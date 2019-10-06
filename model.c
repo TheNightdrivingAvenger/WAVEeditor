@@ -303,6 +303,7 @@ void Model_DeletePiece(PMODELDATA pSelf)
 		lastAction->action = eaDelete;
 		lastAction->rgRange = pSelf->rgSelectedRange;
 
+		// TODO: set selection immediately after the deleted piece
 		ZeroMemory(&pSelf->rgSelectedRange, sizeof(SAMPLERANGE));
 		// if we deleted something, then copied piece is no longer valid
 		ZeroMemory(&pSelf->rgCopyRange, sizeof(SAMPLERANGE));
@@ -412,9 +413,4 @@ void Model_ZoomLevelChange(PMODELDATA pSelf, enum zoomingLevelType zoomingType)
 			MainWindow_UpdateView(pSelf->mainView, pSelf, fittingInWindow, NULL);
 			break;
 	}
-}
-
-PSAMPLERANGE Model_GetSelectionInfo(PMODELDATA pSelf)
-{
-	return &pSelf->rgSelectedRange;
 }

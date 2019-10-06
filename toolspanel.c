@@ -139,7 +139,7 @@ LRESULT CALLBACK ToolsPanel_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 
 		// *** BUTTONS INTERFACE OBJECTS INITIALIZATION *** /// 0 -- play button, 1 -- pause button, 2 -- stop button
 		// TODO: improve this and make it extensible
-		buttonInfoArray[0]->pen = CreatePen(PS_SOLID, 3, RGB(210,210,210));
+		buttonInfoArray[0]->pen = CreatePen(PS_SOLID, 1, RGB(210,210,210));
 		buttonInfoArray[0]->brush = CreateSolidBrush(RGB(65,208,34));
 		buttonInfoArray[0]->Button_Draw = PlayButton_Draw;
 		buttonInfoArray[0]->Button_OnClick = PlayButton_OnClick;

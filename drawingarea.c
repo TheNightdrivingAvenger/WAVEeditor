@@ -30,6 +30,28 @@ BOOL DrawingArea_DrawNewFile(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 	return res;
 }
 
+void DrawingArea_SampleRangeToSelection(PDRAWINGWINDATA pSelf, PSAMPLERANGE range)
+{
+	if (pSelf->minMaxChunksCache != NULL) {
+		sampleIndex minEnd = min(range->nLastSample, pSelf->rgCurDisplayedRange.nLastSample);
+		sampleIndex maxStart = max(range->nFirstSample, pSelf->rgCurDisplayedRange.nFirstSample);
+		sampleIndex intersectedSegment = minEnd - maxStart;
+
+		if (intersectedSegment >= 0) {
+			pSelf->rcSelectedRange.left = maxStart / pSelf->samplesInBlock * pSelf->stepX -
+				pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
+			if (range->nFirstSample == range->nLastSample) {
+				pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + CURSOR_THICKNESS;
+			} else {
+				pSelf->rcSelectedRange.right = minEnd / pSelf->samplesInBlock * pSelf->stepX -
+					pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
+			}
+		} else {
+			pSelf->rcSelectedRange.left = pSelf->rcSelectedRange.right = -1;
+		}
+	}
+}
+
 // TODO: may consider to jump not straight to the action place, but a bit before it
 BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACTIONINFO aiAction)
 {
@@ -38,15 +60,13 @@ BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACT
 
 	sampleIndex curDisplayedRangeLength = pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample + 1;
 	// range where action occured starts outside of visible region, so we jump to it
-	// TODO: this changes scale if action occured at the end of the file. Should make it no shorter than curDisplayedRangeLength
 	if ((aiAction->rgRange.nFirstSample < pSelf->rgCurDisplayedRange.nFirstSample)
 		|| (aiAction->rgRange.nFirstSample > pSelf->rgCurDisplayedRange.nLastSample)) {
 
 		pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
 		sampleIndex samplesDelta = pSelf->lastSample - aiAction->rgRange.nFirstSample + 1;
-		// TODO: finish this
-		if (samplesDelta < curDisplayedRangeLength - 1) {
-			pSelf->rgCurDisplayedRange.nFirstSample = max(0, pSelf->rgCurDisplayedRange.nFirstSample - samplesDelta);
+		if (samplesDelta <= curDisplayedRangeLength - 1) {
+			pSelf->rgCurDisplayedRange.nFirstSample = max(0, pSelf->lastSample - curDisplayedRangeLength + 1);
 		}
 	}
 	// choose minimum between total samples count and previous range width
@@ -68,40 +88,6 @@ BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACT
 	return res;
 }
 
-void DrawingArea_SampleRangeToSelection(PDRAWINGWINDATA pSelf, PSAMPLERANGE range)
-{
-	if (pSelf->minMaxChunksCache != NULL) {
-		sampleIndex minEnd = min(range->nLastSample, pSelf->rgCurDisplayedRange.nLastSample);
-		sampleIndex maxStart = max(range->nFirstSample, pSelf->rgCurDisplayedRange.nFirstSample);
-		sampleIndex intersectedSegment = minEnd - maxStart;
-
-		if (intersectedSegment >= 0) {
-			pSelf->rcSelectedRange.left = maxStart / pSelf->samplesInBlock * pSelf->stepX -
-				pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
-			if (range->nFirstSample == range->nLastSample) {
-				pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + CURSOR_THICKNESS;
-			} else {
-				pSelf->rcSelectedRange.right = minEnd / pSelf->samplesInBlock * pSelf->stepX -
-					pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock;
-			}
-		} else {
-			pSelf->rcSelectedRange.left = pSelf->rcSelectedRange.right = -1;
-		}
-		//if ((range->nFirstSample == range->nLastSample) && (range->nFirstSample >= pSelf->rgCurDisplayedRange.nFirstSample)
-			//&& (range->nLastSample <= pSelf->rgCurDisplayedRange.nLastSample)) {
-
-			//pSelf->rcSelectedRange.left = (range->nFirstSample - pSelf->rgCurDisplayedRange.nFirstSample) / pSelf->samplesInBlock * pSelf->stepX;
-			//pSelf->rcSelectedRange.right = pSelf->rcSelectedRange.left + CURSOR_THICKNESS;
-		//}
-		//if ((abs(range->nFirstSample - pSelf->rgCurDisplayedRange.nFirstSample)
-			//<= pSelf->rgCurDisplayedRange.nLastSample - pSelf->rgCurDisplayedRange.nFirstSample) {
-
-			//pSelf->rcSelectedRange.left = max(0, (range->nFirstSample - pSelf->rgCurDisplayedRange.nFirstSample) / pSelf->samplesInBlock * pSelf->stepX);
-			//pSelf->rcSelectedRange.right = min(pSelf->rcClientSize.right, (range->nLastSample - pSelf->rgCurDisplayedRange.nFirstSample) / pSelf->samplesInBlock * pSelf->stepX
-		//}
-	}
-}
-
 void DrawingArea_SetNewRange(PDRAWINGWINDATA pSelf, PACTIONINFO aiAction)
 {
 	pSelf->rgCurDisplayedRange.nFirstSample = aiAction->rgRange.nFirstSample;
@@ -111,8 +97,6 @@ void DrawingArea_SetNewRange(PDRAWINGWINDATA pSelf, PACTIONINFO aiAction)
 										pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock, 0};
 	// TODO: this division is not good, consider saving another range (in blocks) ^^^
 	SetScrollInfo(pSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
-	// TODO: consider embedding this model pointer to ACTIONINFO struct, because I shouldn't use it directly like this
-	DrawingArea_SampleRangeToSelection(pSelf, Model_GetSelectionInfo(pSelf->modelData));
 	DrawingArea_DrawWave(pSelf);
 	// A bit laggy, can use update window or leave it as it is (it's OK)
 	InvalidateRect(pSelf->winHandle, NULL, TRUE);
@@ -367,7 +351,8 @@ LRESULT CALLBACK DrawingArea_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 		case WM_ERASEBKGND:
 			return TRUE;
 		case WM_SIZE:
-			GetClientRect(pDrawSelf->winHandle, &(pDrawSelf->rcClientSize));
+			pDrawSelf->rcClientSize.bottom = HIWORD(lParam) + 1;
+			pDrawSelf->rcClientSize.right = LOWORD(lParam) + 1;
 			if (pDrawSelf->lastSample != 0) {
 				DrawingArea_RecalcCurDisplayedRange(pDrawSelf);
 				scrollInfo = (SCROLLINFO){ sizeof(SCROLLINFO), SIF_ALL | SIF_DISABLENOSCROLL,

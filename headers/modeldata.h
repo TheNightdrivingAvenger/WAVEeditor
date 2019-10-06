@@ -51,4 +51,3 @@ void Model_Reverse(PMODELDATA pSelf);
 void Model_UpdateSelection(PMODELDATA pSelf, BOOL isRangeSelected, PSAMPLERANGE range);
 void Model_UpdatePlayerStatus(PMODELDATA pSelf, PlayerState status);
 void Model_ZoomLevelChange(PMODELDATA pSelf, enum zoomingLevelType zoomingType);
-PSAMPLERANGE Model_GetSelectionInfo(PMODELDATA pSelf);

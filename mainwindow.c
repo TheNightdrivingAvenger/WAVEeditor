@@ -32,16 +32,12 @@ void MainWindow_UpdateView(PMAINWINDATA pSelf, PMODELDATA model, DWORD reasons, 
 		updInfo->dataSize = model->dataSize;
 		updInfo->wfxFormat = &(model->wfxFormat);
 		DrawingArea_UpdateCache(pSelf->drawingArea, updInfo, aiLastAction);
+		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
 		HeapFree(GetProcessHeap(), 0, updInfo);
 	}
-
 	if (reasons & curFileNameChange) {
 		//SetWindowText(pSelf->wiHandle, chosenFile);
 	}
-	if (reasons & selectionChange) {
-		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
-	}
-	// TODO: consider not resetting the cursor but moving it (in model)
 	if (reasons & playbackStop) {
 		MainWindow_PlaybackStop(pSelf);
 	}
@@ -51,6 +47,7 @@ void MainWindow_UpdateView(PMAINWINDATA pSelf, PMODELDATA model, DWORD reasons, 
 		updInfo->dataSize = model->dataSize;
 		updInfo->wfxFormat = &(model->wfxFormat);
 		DrawingArea_ZoomIn(pSelf->drawingArea, updInfo);
+		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
 		HeapFree(GetProcessHeap(), 0, updInfo);
 	} else if (reasons & zoomingOut) {
 		PUPDATEINFO updInfo = HeapAlloc(GetProcessHeap(), 0, sizeof(UPDATEINFO));
@@ -58,11 +55,16 @@ void MainWindow_UpdateView(PMAINWINDATA pSelf, PMODELDATA model, DWORD reasons, 
 		updInfo->dataSize = model->dataSize;
 		updInfo->wfxFormat = &(model->wfxFormat);
 		DrawingArea_ZoomOut(pSelf->drawingArea, updInfo);
+		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
 		HeapFree(GetProcessHeap(), 0, updInfo);
 	} else if (reasons & fittingInWindow) {
 	}
 	if (reasons & activeRangeChange) {
 		DrawingArea_SetNewRange(pSelf->drawingArea, aiLastAction);
+		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
+	}
+	if (reasons & selectionChange) {
+		DrawingArea_UpdateSelection(pSelf->drawingArea, &model->rgSelectedRange);
 	}
 }
 
@@ -272,9 +274,9 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		case WM_SIZE:
 			if (wParam != SIZE_MINIMIZED) {
 				GetClientRect(pMainSelf->winHandle, &newSize);
-				MoveWindow(pMainSelf->drawingAreaHandle, 0, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), newSize.right, 
-					(int)truncf(newSize.bottom * (1 - DRAWINGWINPOSYSCALE)), FALSE);
-				MoveWindow(pMainSelf->toolsWinHandle, 0, 0, newSize.right, (int)truncf(newSize.bottom * DRAWINGWINPOSYSCALE), TRUE);
+				MoveWindow(pMainSelf->drawingAreaHandle, 0, (int)truncf(HIWORD(lParam) * DRAWINGWINPOSYSCALE), LOWORD(lParam), 
+					(int)truncf(HIWORD(lParam) * (1 - DRAWINGWINPOSYSCALE)), FALSE);
+				MoveWindow(pMainSelf->toolsWinHandle, 0, 0, LOWORD(lParam), (int)truncf(HIWORD(lParam) * DRAWINGWINPOSYSCALE), TRUE);
 			}
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
 		case WM_CLOSE:

@@ -36,20 +36,20 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	sampleIndex totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample + 1;
 	if (totalSamples == 0) return FALSE;
 
-	float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT);
-
-	if (samplesToWidth >= 1) {
-		float intPart;
-		if ((modff(samplesToWidth, &intPart) > 0) && (zoomingType == fitInWindow)) {
-			windowProps->samplesInBlock = (int)truncf(intPart + 1);
-		} else {
-			windowProps->samplesInBlock = (int)truncf(intPart);
-		}
-	} else {
-		windowProps->samplesInBlock = 1;
-	}
-
 	if (zoomingType != zoomNone) {
+		float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT);
+
+		if (samplesToWidth >= 1) {
+			float intPart;
+			if ((modff(samplesToWidth, &intPart) > 0) && (zoomingType == fitInWindow)) {
+				windowProps->samplesInBlock = (int)truncf(intPart + 1);
+			} else {
+				windowProps->samplesInBlock = (int)truncf(intPart);
+			}
+		} else {
+			windowProps->samplesInBlock = 1;
+		}
+
 		windowProps->stepX = 1;
 		if (windowProps->samplesInBlock == 1) {
 			if (zoomingType == fitInWindow) {
@@ -59,7 +59,6 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 			}
 		}
 	}
-
 	int delta; //how many samples were processed in min-max
 	int resArr[wfxFormat->nChannels][2];
 
@@ -97,7 +96,7 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 		}
 		(windowProps->cacheLength)++;
 	}
-	return i;// - delta;//windowProps->samplesInBlock * wfxFormat->nChannels;
+	return TRUE;//i - delta;//windowProps->samplesInBlock * wfxFormat->nChannels;
 }
 
 void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
