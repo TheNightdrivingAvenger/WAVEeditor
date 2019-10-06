@@ -18,6 +18,12 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	
 	minMaxCalculator calcMinMax;
 
+	windowProps->cacheLength = 0;
+	if (windowProps->minMaxChunksCache != NULL) {
+		HeapFree(GetProcessHeap(), 0, windowProps->minMaxChunksCache);
+		windowProps->minMaxChunksCache = NULL;
+	}
+
 	switch (wfxFormat->wBitsPerSample)
 	{
 		case 8:
@@ -32,9 +38,12 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 			return FALSE; //invalid data
 	}
 
+	if (windowProps->rgCurDisplayedRange.nLastSample == 0) {
+		return FALSE;
+	}
+
 	// total displayed samples
 	sampleIndex totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample + 1;
-	if (totalSamples == 0) return FALSE;
 
 	if (zoomingType != zoomNone) {
 		float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT);
@@ -62,10 +71,6 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	int delta; //how many samples were processed in min-max
 	int resArr[wfxFormat->nChannels][2];
 
-	if (windowProps->minMaxChunksCache != NULL) {
-		HeapFree(GetProcessHeap(), 0, windowProps->minMaxChunksCache);
-	}
-	windowProps->lastSample = dataSize / wfxFormat->nBlockAlign - 1;
 	// samples in all channels
 	sampleIndex totalFileSamples = wfxFormat->nChannels * (windowProps->lastSample + 1);
 
@@ -103,8 +108,6 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 {
 	sampleIndex totalSamples = windowProps->rgCurDisplayedRange.nLastSample - windowProps->rgCurDisplayedRange.nFirstSample + 1;
 
-	if (totalSamples == 0) return;
-
 	int zeroChannelLvl = (windowProps->rcClientSize.bottom - 1) / wfxFormat->nChannels;
 
 	// integer division -- truncation towards zero. We take the block in which the first sample is
@@ -132,8 +135,9 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 
 	SelectObject(windowProps->backDC, windowProps->curPen);
 	int xPos;
-	// drawing until we hit the end of the cache or window border
-	for (xPos = 0; xPos <= (windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT)
+	// drawing until we hit the end of the cache or window border. Also draws a line to the next block even if it's out of the screen
+	// (this block doesn't count in total blocks drawn, this line just removes abrupt edge)
+	for (xPos = 0; xPos <= (windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT + windowProps->stepX)
 			&& cachePos <= windowProps->cacheLength - 1; xPos += windowProps->stepX) {
 		// drawing all channels in cycle
 		for (int j = 0; j < wfxFormat->nChannels; j++) {
@@ -147,10 +151,15 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 		cache += wfxFormat->nChannels * 2;
 		cachePos++;
 	}
+	if ((xPos - windowProps->stepX) > (windowProps->rcClientSize.right - 1)) {
+		cachePos--;
+		windowProps->lastUsedPixelX = xPos - windowProps->stepX * 2;
+	} else {
+		windowProps->lastUsedPixelX = xPos - windowProps->stepX;
+	}
 	// min because there could be less samples in the last block than in others and we can go out of buffer's bounds
 	windowProps->rgCurDisplayedRange.nLastSample = min(windowProps->lastSample, cachePos * windowProps->samplesInBlock - 1);
 
-	windowProps->lastUsedPixelX = xPos - windowProps->stepX;
 	if (isVisible && isMarker) {
 		SelectObject(windowProps->backDC, windowProps->borderPen);
 		FillRect(windowProps->backDC, &windowProps->rcSelectedRange, windowProps->highlightBrush);
