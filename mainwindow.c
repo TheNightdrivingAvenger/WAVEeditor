@@ -151,7 +151,7 @@ void MainWindow_SaveFileAs(PMAINWINDATA pSelf, BOOL saveSelected)
 	}
 }
 
-// TODO: temporary solution; may be improved and changed
+// TODO: temporary solution; must be changed and improved
 void MainWindow_ShowModalError(PMAINWINDATA pSelf, const wchar_t *const message, const wchar_t *const header, UINT boxType)
 {
 	MessageBox(pSelf->winHandle, message, header, boxType);
@@ -175,9 +175,7 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	RECT newSize;
 	LPMINMAXINFO lpMMI;
 
-	const float DRAWINGWINPOSYSCALE = 0.1;
-
-	int modalRes;
+	const float DRAWINGWINPOSYSCALE = 0.1f;
 
 	if (uMsg == WM_CREATE) {
 		pMainSelf = (PMAINWINDATA)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(MAINWINDATA));
@@ -230,6 +228,7 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 		case WM_COMMAND:
 			switch (LOWORD(wParam)) {
 				case AMM_OPENFILE:
+			// TODO: call finish work, then call ChangeCurFile
 					MainWindow_ChangeCurFile(pMainSelf);
 					return 0;
 				case AMM_SAVEFILEAS:
@@ -280,10 +279,10 @@ LRESULT CALLBACK MainWindow_WindowProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 			}
 			return DefWindowProc(hWnd, uMsg, wParam, lParam);
 		case WM_CLOSE:
-			if (pMainSelf->modelData->isChanged) {
-				modalRes = MessageBoxW(pMainSelf->winHandle, L"Есть несохранённые изменения. Желаете их сохранить?", L"Внимание", MB_YESNOCANCEL);
+			if (Model_IsChanged(pMainSelf->modelData)) {
+				int modalRes = MessageBoxW(pMainSelf->winHandle, L"Есть несохранённые изменения. Желаете их сохранить?", L"Внимание", MB_YESNOCANCEL);
 				if (modalRes == IDYES) {
-					MainWindow_SaveFileAs(pMainSelf, FALSE);
+					Model_SaveFile(pMainSelf->modelData);
 				} else if (modalRes == IDCANCEL) {
 					return 0;
 				}

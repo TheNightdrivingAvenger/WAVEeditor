@@ -14,29 +14,30 @@ typedef unsigned long (*minMaxCalculator)(WORD, int [*][2], void *, unsigned lon
 
 BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PWAVEFORMATEX wfxFormat, enum zoomingLevelType zoomingType)
 {
-	float minSampleVal = 0;
+	float minSampleVal = 0.0f;
 	
 	minMaxCalculator calcMinMax;
 
 	windowProps->cacheLength = 0;
 	if (windowProps->minMaxChunksCache != NULL) {
-		HeapFree(GetProcessHeap(), 0, windowProps->minMaxChunksCache);
+		BOOL resH = HeapFree(GetProcessHeap(), 0, windowProps->minMaxChunksCache);
+		DWORD errrr = GetLastError();
 		windowProps->minMaxChunksCache = NULL;
 	}
 
-	switch (wfxFormat->wBitsPerSample)
-	{
-		case 8:
-			calcMinMax = calcMinMax8;
-			minSampleVal = 0;
-			break;
-		case 16:
-			calcMinMax = calcMinMax16;
-			minSampleVal = -32768;
-			break;
-		default:
-			return FALSE; //invalid data
-	}
+	//switch (wfxFormat->wBitsPerSample)
+	//{
+		//case 8:
+			//calcMinMax = calcMinMax8;
+			//minSampleVal = 0.0f;
+			//break;
+		//case 16:
+			//calcMinMax = calcMinMax16;
+			//minSampleVal = -32768.0f;
+			//break;
+		//default:
+			//return FALSE; //invalid data
+	//}
 
 	if (windowProps->rgCurDisplayedRange.nLastSample == 0) {
 		return FALSE;
@@ -49,11 +50,11 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 		float samplesToWidth = totalSamples / ((float)windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT);
 
 		if (samplesToWidth >= 1) {
-			float intPart;
-			if ((modff(samplesToWidth, &intPart) > 0) && (zoomingType == fitInWindow)) {
-				windowProps->samplesInBlock = (int)truncf(intPart + 1);
+			if (zoomingType == fitInWindow || zoomingType == zoomOut) {
+				windowProps->samplesInBlock = (int)ceilf(samplesToWidth);
 			} else {
-				windowProps->samplesInBlock = (int)truncf(intPart);
+				// just get rid of fractional part
+				windowProps->samplesInBlock = (int)samplesToWidth;
 			}
 		} else {
 			windowProps->samplesInBlock = 1;
@@ -61,7 +62,7 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 
 		windowProps->stepX = 1;
 		if (windowProps->samplesInBlock == 1) {
-			if (zoomingType == fitInWindow) {
+			if (zoomingType == fitInWindow || zoomingType == zoomOut) {
 				windowProps->stepX = max(1, (windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT) / totalSamples);
 			} else {
 				windowProps->stepX = max(1, (int)roundf((windowProps->rcClientSize.right - 1 - SCREEN_DELTA_RIGHT) / (float)totalSamples));
@@ -74,12 +75,27 @@ BOOL recalcMinMax(PDRAWINGWINDATA windowProps, void *soundData, int dataSize, PW
 	// samples in all channels
 	sampleIndex totalFileSamples = wfxFormat->nChannels * (windowProps->lastSample + 1);
 
-																	  // 2 -- min and max
-	if ((windowProps->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalFileSamples / windowProps->samplesInBlock) + 1))) == NULL) {
+																	  // 2 -- min and max TODO: +1 breaks the heap on HeapFree on large files, +2 seems to fix this. Recalc right sizes!
+	if ((windowProps->minMaxChunksCache = HeapAlloc(GetProcessHeap(), 0, sizeof(int) * 2 * ((totalFileSamples / windowProps->samplesInBlock) + 2))) == NULL) {
 		return FALSE;
 	}
 
 	int *cache = (int *)windowProps->minMaxChunksCache;
+
+	// TODO: return it to the top, it's IMPORTANT!!!
+	switch (wfxFormat->wBitsPerSample)
+	{
+		case 8:
+			calcMinMax = calcMinMax8;
+			minSampleVal = 0.0f;
+			break;
+		case 16:
+			calcMinMax = calcMinMax16;
+			minSampleVal = -32768.0f;
+			break;
+		default:
+			return FALSE; //invalid data
+	}
 
 	windowProps->cacheLength = 0;
 	sampleIndex i;
@@ -124,9 +140,8 @@ void drawRegion(PDRAWINGWINDATA windowProps, PWAVEFORMATEX wfxFormat)
 		tempMins[i] = cache[i * 2] * zeroChannelLvl / soundDepth + zeroChannelLvl * (i + 1);// *2 because in memory it's [min][max][min][max]...
 	}
 
-	// did user just set the marker or selected a range?
-	//if (windowProps->rcSelectedRange.left >= 0) TODO: add hidden cursor (-1 on selected range)
 	BOOL isVisible = (windowProps->rcSelectedRange.left >= 0);
+	// did user just set the marker or selected a range?
 	BOOL isMarker = ((windowProps->rcSelectedRange.right - windowProps->rcSelectedRange.left) <= CURSOR_THICKNESS);
 	if (isVisible && !isMarker)
 	{

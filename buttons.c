@@ -6,8 +6,8 @@
 void PlayButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 {
 	const float BUTTONPADDINGSCALE = 0.1;
-	int sidePadding = (pInfo->buttonPos.right - pInfo->buttonPos.left) * BUTTONPADDINGSCALE;
-	int topPadding = (pInfo->buttonPos.bottom - pInfo->buttonPos.top) * BUTTONPADDINGSCALE;
+	int sidePadding = (int)((pInfo->buttonPos.right - pInfo->buttonPos.left) * BUTTONPADDINGSCALE);
+	int topPadding = (int)((pInfo->buttonPos.bottom - pInfo->buttonPos.top) * BUTTONPADDINGSCALE);
 
 	POINT playButtonVertexes[3];
 	playButtonVertexes[0].x = pInfo->buttonPos.left + sidePadding;
@@ -29,20 +29,20 @@ void PlayButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 void PauseButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 {
 	const float BUTTONPADDINGSCALE = 0.1;
-	int sidePadding = (pInfo->buttonPos.right - pInfo->buttonPos.left) * BUTTONPADDINGSCALE;
-	int topPadding = (pInfo->buttonPos.bottom - pInfo->buttonPos.top) * BUTTONPADDINGSCALE;
+	int sidePadding = (int)((pInfo->buttonPos.right - pInfo->buttonPos.left) * BUTTONPADDINGSCALE);
+	int topPadding = (int)((pInfo->buttonPos.bottom - pInfo->buttonPos.top) * BUTTONPADDINGSCALE);
 
 	const float PAUSEBARTHICKNESSSCALE = 0.3;
 	RECT pauseButtonBar = (RECT) { pInfo->buttonPos.left + sidePadding,
 		pInfo->buttonPos.top + topPadding,
-		(pInfo->buttonPos.right - pInfo->buttonPos.left) * PAUSEBARTHICKNESSSCALE + pInfo->buttonPos.left + sidePadding,
+		(LONG)((pInfo->buttonPos.right - pInfo->buttonPos.left) * PAUSEBARTHICKNESSSCALE + pInfo->buttonPos.left + sidePadding),
 		pInfo->buttonPos.bottom - topPadding };
 
 	HBRUSH tempBrush = SelectObject(targetDC, pInfo->brush);
 	HPEN tempPen = SelectObject(targetDC, pInfo->pen);
 
 	Rectangle(targetDC, pauseButtonBar.left, pauseButtonBar.top, pauseButtonBar.right, pauseButtonBar.bottom);
-	pauseButtonBar.left = pInfo->buttonPos.right - (pInfo->buttonPos.right - pInfo->buttonPos.left) * PAUSEBARTHICKNESSSCALE - sidePadding;
+	pauseButtonBar.left = pInfo->buttonPos.right - (LONG)((pInfo->buttonPos.right - pInfo->buttonPos.left) * PAUSEBARTHICKNESSSCALE) - sidePadding;
 	pauseButtonBar.right = pInfo->buttonPos.right - sidePadding;
 	Rectangle(targetDC, pauseButtonBar.left, pauseButtonBar.top, pauseButtonBar.right, pauseButtonBar.bottom);
 
@@ -53,8 +53,8 @@ void PauseButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 void StopButton_Draw(PBUTTONINFO pInfo, HDC targetDC)
 {
 	const float BUTTONPADDINGSCALE = 0.1;
-	int sidePadding = (pInfo->buttonPos.right - pInfo->buttonPos.left) * BUTTONPADDINGSCALE;
-	int topPadding = (pInfo->buttonPos.bottom - pInfo->buttonPos.top) * BUTTONPADDINGSCALE;
+	int sidePadding = (int)((pInfo->buttonPos.right - pInfo->buttonPos.left) * BUTTONPADDINGSCALE);
+	int topPadding = (int)((pInfo->buttonPos.bottom - pInfo->buttonPos.top) * BUTTONPADDINGSCALE);
 
 	RECT stop = (RECT) { pInfo->buttonPos.left + sidePadding,
 		pInfo->buttonPos.top + topPadding,

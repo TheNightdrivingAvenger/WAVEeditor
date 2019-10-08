@@ -4,6 +4,7 @@
 #include "headers\soundworker.h"
 
 // TODO: silence is not always 0, fix for different formats
+// if only one sample is selected then it will be made silent
 void makeSilent(PMODELDATA pModelData)
 {
 	unsigned long bufferStart = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
@@ -11,7 +12,7 @@ void makeSilent(PMODELDATA pModelData)
 		(pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * pModelData->wfxFormat.nBlockAlign);
 }
 
-// copying is inclusive on borders
+// copying is inclusive on borders; pasting before the first selected sample
 void pastePiece(PMODELDATA pModelData)
 {
 	DWORD copiedBlockSize = (pModelData->rgCopyRange.nLastSample - pModelData->rgCopyRange.nFirstSample + 1) *
@@ -44,11 +45,13 @@ void pastePiece(PMODELDATA pModelData)
 	pModelData->rgSelectedRange.nLastSample += copiedBlockSampleSize;
 }
 
-// deleting is inclusive on borders
+// deleting is inclusive on borders. +1 makes possible selecting 1 sample (by LMB) and deleting exactly it; if selected 2 samples (1 gap) they both will be deleted
+// cursor is set right before the deleted piece (first selected sample - 1)
 void deletePiece(PMODELDATA pModelData)
 {
 	DWORD cutBlockSize = (pModelData->rgSelectedRange.nLastSample - pModelData->rgSelectedRange.nFirstSample + 1) * 
 																										pModelData->wfxFormat.nBlockAlign;
+	// paste on the place of the first selected sample (replace first selected)
 	DWORD pastePos = pModelData->rgSelectedRange.nFirstSample * pModelData->wfxFormat.nBlockAlign;
 
 	// address of the piece that needs to get moved for shrinking
@@ -58,6 +61,8 @@ void deletePiece(PMODELDATA pModelData)
 	pModelData->soundData = HeapReAlloc(GetProcessHeap(), 0, pModelData->soundData, pModelData->dataSize - cutBlockSize);
 
 	pModelData->dataSize -= cutBlockSize;
+	pModelData->rgSelectedRange.nFirstSample = max(0, pModelData->rgSelectedRange.nFirstSample - 1);
+	pModelData->rgSelectedRange.nLastSample = pModelData->rgSelectedRange.nFirstSample;
 }
 
 void reversePiece(PMODELDATA pModelData)

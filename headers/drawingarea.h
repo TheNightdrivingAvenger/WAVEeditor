@@ -29,20 +29,13 @@ typedef struct tagDRAWINGWINDATA {
 	int samplesInBlock;			// number of samples used to calculate one cache block for one channel
 	WAVEFORMATEX soundMetadata;	// stored to not disturb model on every redrawing, like a cache
 	SAMPLERANGE rgCurDisplayedRange;
-	sampleIndex lastSample;		// last sample number in sound data (for one channel)
+	sampleIndex lastSample;		// last sample number in sound data (for one channel) (zero-based index, that is, n - 1)
 	//int blocksInScrollStep;
 	RECT rcClientSize;
 	RECT rcSelectedRange;
 	LONG lastUsedPixelX;
 	LONG stepX;					// how many pixels in one step
 } DRAWINGWINDATA, *PDRAWINGWINDATA;
-
-typedef struct tagUPDATEINFO {	// struct for holding a "cache update" message's info. Should be allocated in the heap by caller. Memory is freed by the message receiver
-	void *soundData;
-	int dataSize;
-	PWAVEFORMATEX wfxFormat;
-	//SAMPLERANGE workingSet;
-} UPDATEINFO, *PUPDATEINFO;
 
 BOOL DrawingArea_UpdateCache(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo, PACTIONINFO aiAction);
 BOOL DrawingArea_DrawNewFile(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo);

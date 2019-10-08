@@ -87,6 +87,7 @@ BOOL ToolsPanel_CreateBackBuffer(PTOOLSWINDATA pSelf)
 	return FALSE;
 }
 
+// TODO: make this go through the model?
 int ToolsPanel_Stop_OnClick(PTOOLSWINDATA pSelf)
 {
 	MainWindow_PlaybackStop(pSelf->parentWindow);
@@ -95,6 +96,7 @@ int ToolsPanel_Stop_OnClick(PTOOLSWINDATA pSelf)
 
 int ToolsPanel_Pause_OnClick(PTOOLSWINDATA pSelf)
 {
+	MessageBox(NULL, L"Not implemented", L"", MB_OK);
 	return 0;
 }
 
