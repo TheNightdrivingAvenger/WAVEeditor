@@ -17,7 +17,7 @@ BOOL DrawingArea_DrawNewFile(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 	pSelf->rgCurDisplayedRange.nFirstSample = 0;
 	pSelf->rgCurDisplayedRange.nLastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;
 
-	pSelf->lastSample = updateInfo->dataSize / pSelf->soundMetadata.nBlockAlign - 1;//pSelf->rgCurDisplayedRange.nLastSample;
+	pSelf->lastSample = pSelf->rgCurDisplayedRange.nLastSample;
 
 	pSelf->rcSelectedRange.left = pSelf->rcSelectedRange.right = -1;
 	BOOL res = recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, fitInWindow);
