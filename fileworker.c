@@ -1,7 +1,3 @@
-/*ПООЧЕРЁДНО ЧИТАЕТ ЧАНКИ .WAV ИЗ ФАЙЛА
-* ИСПОЛЬЗУЕТСЯ ДОЧЕРНИМ ОКНОМ ДЛЯ ЧТЕНИЯ ИЗ ФАЙЛА
-*/
-
 #define UNICODE
 #define _UNICODE
 #include <Windows.h>

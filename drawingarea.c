@@ -186,6 +186,13 @@ void DrawingArea_ZoomIn(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 		recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, zoomIn);
 		DrawingArea_DrawWave(pSelf);
 		InvalidateRect(pSelf->winHandle, NULL, TRUE);
+
+		SCROLLINFO scrollInfo = (SCROLLINFO) { sizeof(SCROLLINFO), SIF_ALL | SIF_DISABLENOSCROLL,
+			0, pSelf->cacheLength,
+			pSelf->rgCurDisplayedRange.nLastSample / pSelf->samplesInBlock - pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock,
+			pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock, 0 };
+		// TODO: this division is not good, consider saving another range (in blocks) ^^^
+		SetScrollInfo(pSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
 	}
 }
 
@@ -199,6 +206,12 @@ void DrawingArea_ZoomOut(PDRAWINGWINDATA pSelf, PUPDATEINFO updateInfo)
 	recalcMinMax(pSelf, updateInfo->soundData, updateInfo->dataSize, updateInfo->wfxFormat, zoomOut);
 	DrawingArea_DrawWave(pSelf);
 	InvalidateRect(pSelf->winHandle, NULL, TRUE);
+	SCROLLINFO scrollInfo = (SCROLLINFO) { sizeof(SCROLLINFO), SIF_ALL | SIF_DISABLENOSCROLL,
+		0, pSelf->cacheLength,
+		pSelf->rgCurDisplayedRange.nLastSample / pSelf->samplesInBlock - pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock,
+		pSelf->rgCurDisplayedRange.nFirstSample / pSelf->samplesInBlock, 0 };
+	// TODO: this division is not good, consider saving another range (in blocks) ^^^
+	SetScrollInfo(pSelf->winHandle, SB_HORZ, &scrollInfo, TRUE);
 }
 
 // if false, prev bitmap was not destroyed, but new wasn't created

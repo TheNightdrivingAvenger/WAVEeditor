@@ -116,6 +116,7 @@ int Model_FileChange(PMODELDATA pSelf, HANDLE hNewFile)
 HANDLE getOpeningFile(const wchar_t *const fileName)
 {
 	HANDLE hFile = CreateFile(fileName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, 0);
+	DWORD err = GetLastError();
 	return hFile;
 }
 
@@ -432,3 +433,19 @@ BOOL Model_IsChanged(PMODELDATA pSelf)
 	return pSelf->isChanged;
 }
 
+//BOOL Model_FinishWorkWithFile(PMODELDATA pSelf)
+//{
+	//if (pSelf->isChanged) {
+		//// make view show saving dialog
+		//MainWindow_ProposeFileSaving(pSelf->mainView);
+		//if (res) {
+			//// make view show save file dialog. It will spawn a controller (save file dialog) which will tell the model about user's choice (save or discard)
+			//// doesn't look good to make another flag in change reasons just for displaying a save dialog
+			////MainWindow_SaveFileAs(pMainSelf, FALSE);
+			//// on file change I should call FinishWork method too, then on ChangeFile just open a new file. I can even move cleaning up to here
+		//}
+	//}
+	////Model_Reset(pSelf);
+//}
+
+//void Model_
